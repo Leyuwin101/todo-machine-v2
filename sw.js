@@ -10,7 +10,7 @@
    ========================================================= */
 
 const CACHE_NAME =
-  "todo-machine-v5";
+  "todo-machine-v6";
 
 const APP_SHELL = [
   "./",

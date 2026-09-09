@@ -12,6 +12,9 @@
 const NOTIFICATION_SOUND_KEY =
   "todoMachineNotificationSound";
 
+const NOTIFICATION_VOLUME_KEY =
+  "todoMachineNotificationVolume";
+
 const PUSH_DEVICE_KEY =
   "todoMachinePushDeviceId";
 
@@ -21,6 +24,7 @@ const PUSH_DEVICE_KEY =
 
 let notificationAudioContext = null;
 let notificationStarted = false;
+let notificationGainNode = null;
 
 /* =========================================================
    SOUND STATE
@@ -32,6 +36,57 @@ function isNotificationSoundEnabled() {
       NOTIFICATION_SOUND_KEY
     ) !== "false"
   );
+}
+
+function getNotificationVolume() {
+  try {
+    const value =
+      Number(
+        localStorage.getItem(
+          NOTIFICATION_VOLUME_KEY
+        )
+      );
+
+    if (
+      Number.isFinite(value) &&
+      value >= 0 &&
+      value <= 1
+    ) {
+      return value;
+    }
+  } catch {
+    /* fall through to default */
+  }
+
+  return 0.8;
+}
+
+function setNotificationVolume(value) {
+  const volume =
+    Math.min(
+      1,
+      Math.max(0, Number(value) || 0)
+    );
+
+  try {
+    localStorage.setItem(
+      NOTIFICATION_VOLUME_KEY,
+      String(volume)
+    );
+  } catch {
+    /* storage unavailable — keep in-memory only */
+  }
+
+  const slider =
+    document.getElementById(
+      "notificationVolume"
+    );
+
+  if (slider) {
+    slider.value = String(volume);
+  }
+
+  return volume;
 }
 
 function setNotificationSoundEnabled(
@@ -79,8 +134,30 @@ function createNotificationAudio() {
     return null;
   }
 
-  notificationAudioContext =
-    new AudioContext();
+  try {
+    notificationAudioContext =
+      new AudioContext();
+
+    /* One shared gain node controls volume for every
+       tone the sound system plays. */
+
+    notificationGainNode =
+      notificationAudioContext.createGain();
+
+    notificationGainNode.gain.value =
+      getNotificationVolume();
+
+    notificationGainNode.connect(
+      notificationAudioContext.destination
+    );
+  } catch (error) {
+    console.warn(
+      "[NOTIFICATION] Audio init failed:",
+      error
+    );
+
+    notificationAudioContext = null;
+  }
 
   return notificationAudioContext;
 }
@@ -165,9 +242,6 @@ async function playRetroNotificationSound() {
       const oscillator =
         context.createOscillator();
 
-      const gain =
-        context.createGain();
-
       oscillator.type =
         "square";
 
@@ -176,13 +250,16 @@ async function playRetroNotificationSound() {
         now + start
       );
 
+      const gain =
+        context.createGain();
+
       gain.gain.setValueAtTime(
         0.0001,
         now + start
       );
 
       gain.gain.exponentialRampToValueAtTime(
-        0.08,
+        0.12,
         now + start + 0.015
       );
 
@@ -192,8 +269,13 @@ async function playRetroNotificationSound() {
       );
 
       oscillator.connect(gain);
+
+      /* Route through the shared volume node (or straight
+         to the output if it failed to create). */
+
       gain.connect(
-        context.destination
+        notificationGainNode ||
+          context.destination
       );
 
       oscillator.start(
@@ -712,6 +794,127 @@ document.addEventListener(
       }
     );
 
+    /* Volume slider */
+
+    const volumeSlider =
+      document.getElementById(
+        "notificationVolume"
+      );
+
+    if (volumeSlider) {
+      volumeSlider.value = String(
+        getNotificationVolume()
+      );
+
+      volumeSlider.addEventListener(
+        "input",
+        () => {
+          const volume =
+            setNotificationVolume(
+              volumeSlider.value
+            );
+
+          if (notificationGainNode) {
+            notificationGainNode.gain.value =
+              volume;
+          }
+        }
+      );
+    }
+
+    /* TEST NOTIFICATION button — creates a real browser
+       notification if permission allows. */
+
+    const testNotifyButton =
+      document.getElementById(
+        "testNotificationBtn"
+      );
+
+    if (testNotifyButton) {
+      testNotifyButton.addEventListener(
+        "click",
+        async () => {
+          try {
+            if (
+              !("Notification" in window)
+            ) {
+              window.dispatchEvent(
+                new CustomEvent(
+                  "todo:toast",
+                  {
+                    detail: {
+                      title:
+                        "NOT SUPPORTED",
+
+                      body:
+                        "This browser does not support notifications."
+                    }
+                  }
+                )
+              );
+
+              return;
+            }
+
+            let permission =
+              Notification.permission;
+
+            if (
+              permission === "default"
+            ) {
+              permission =
+                await Notification.requestPermission();
+            }
+
+            if (
+              permission !== "granted"
+            ) {
+              window.dispatchEvent(
+                new CustomEvent(
+                  "todo:toast",
+                  {
+                    detail: {
+                      title:
+                        "NOTIFICATIONS BLOCKED",
+
+                      body:
+                        "Allow notifications for this site in your browser settings, then try again."
+                    }
+                  }
+                )
+              );
+
+              return;
+            }
+
+            await unlockNotificationAudio();
+
+            playRetroNotificationSound();
+
+            new Notification(
+              "TODO MACHINE",
+              {
+                body:
+                  "Reminder test — notifications are working.",
+
+                icon:
+                  "./assets/icon-192.png"
+              }
+            );
+
+            updatePushButtons(
+              "enabled"
+            );
+          } catch (error) {
+            console.warn(
+              "[NOTIFICATION] Test failed:",
+              error
+            );
+          }
+        }
+      );
+    }
+
     /* NOTE: the push enable buttons are wired once in
        app.js (setupNotifications). Wiring them here too
        fired requestPermission/subscribe twice per tap,
@@ -767,5 +970,7 @@ window.Notifications = {
   playRetroNotificationSound,
   unlockNotificationAudio,
   isNotificationSoundEnabled,
-  setNotificationSoundEnabled
+  setNotificationSoundEnabled,
+  getNotificationVolume,
+  setNotificationVolume
 };

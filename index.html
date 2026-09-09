@@ -467,8 +467,25 @@
                   <input id="settingsSoundToggle" type="checkbox" checked>
                 </label>
                 <div class="setting-row">
+                  <div><strong>SOUND VOLUME</strong><small>Volume of the notification beep.</small></div>
+                  <input
+                    id="notificationVolume"
+                    class="volume-slider"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value="0.8"
+                    aria-label="Notification volume"
+                  >
+                </div>
+                <div class="setting-row">
                   <div><strong>SOUND TEST</strong><small>Audio requires a user interaction.</small></div>
                   <button id="settingsTestSound" class="retro-button" type="button">TEST</button>
+                </div>
+                <div class="setting-row">
+                  <div><strong>TEST NOTIFICATION</strong><small>Creates a real system notification to verify the setup.</small></div>
+                  <button id="testNotificationBtn" class="retro-button" type="button">TEST</button>
                 </div>
               </div>
             </section>

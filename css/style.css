@@ -2248,12 +2248,13 @@ html.standalone-mode .sidebar {
   min-width: 0;
 }
 
-/* Better native controls on touch screens. */
+/* Better native controls on touch screens. Decorative
+   window-controls stay small so titlebars keep their
+   proportions on mobile. */
 @media (pointer: coarse) {
   .nav-button,
   .retro-button,
-  .icon-button,
-  .window-controls button {
+  .icon-button {
     min-height: 42px;
   }
 
@@ -2263,6 +2264,75 @@ html.standalone-mode .sidebar {
     width: 24px;
     height: 24px;
   }
+}
+
+/* Retro volume slider (Settings → Notifications). */
+
+.volume-slider {
+
+  flex: 0 0 auto;
+
+  width: 130px;
+
+  height: 22px;
+
+  appearance: none;
+
+  -webkit-appearance: none;
+
+  background: var(--white);
+
+  border: 2px solid var(--dark);
+
+  box-shadow: var(--inset);
+
+}
+
+
+.volume-slider::-webkit-slider-thumb {
+
+  appearance: none;
+
+  -webkit-appearance: none;
+
+  width: 14px;
+
+  height: 18px;
+
+  background: var(--navy);
+
+  border: 1px solid var(--black);
+
+  cursor: pointer;
+
+}
+
+
+.volume-slider::-moz-range-thumb {
+
+  width: 14px;
+
+  height: 18px;
+
+  background: var(--navy);
+
+  border: 1px solid var(--black);
+
+  border-radius: 0;
+
+  cursor: pointer;
+
+}
+
+
+@media (max-width: 420px) {
+
+  .volume-slider {
+
+    width: 110px;
+
+  }
+
 }
 
 @media (max-width: 760px) {

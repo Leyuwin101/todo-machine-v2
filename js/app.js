@@ -22,8 +22,8 @@
     listView: "today",
     calendarDate: new Date(),
     editingId: null,
-    deferredInstallPrompt: null,
-    soundEnabled: true
+    soundEnabled: true,
+    soundVolume: 0.8
   };
 
   /* =========================================================
@@ -56,6 +56,8 @@
     todayCount: $("#todayCount"),
     nextTaskContent: $("#nextTaskContent"),
     progressContent: $("#progressContent"),
+    largeClock: $("#largeClock"),
+    largeDate: $("#largeDate"),
 
     /* Dashboard search */
     taskSearch: $("#taskSearch"),
@@ -1682,52 +1684,6 @@
     }
   }
 
-  async function installApp() {
-    if (
-      !state.deferredInstallPrompt
-    ) {
-      toast(
-        "INSTALL",
-        isStandalone()
-          ? "TODO MACHINE IS ALREADY INSTALLED."
-          : "INSTALL PROMPT IS NOT AVAILABLE. USE YOUR BROWSER'S INSTALL OPTION."
-      );
-
-      return;
-    }
-
-    try {
-      state.deferredInstallPrompt.prompt();
-
-      const result =
-        await state.deferredInstallPrompt
-          .userChoice;
-
-      if (
-        result.outcome ===
-        "accepted"
-      ) {
-        toast(
-          "INSTALLING",
-          "TODO MACHINE IS BEING INSTALLED."
-        );
-      }
-
-      state.deferredInstallPrompt =
-        null;
-
-      if (els.installAppBtn) {
-        els.installAppBtn.hidden =
-          true;
-      }
-    } catch (error) {
-      console.error(
-        "PWA INSTALL ERROR:",
-        error
-      );
-    }
-  }
-
   /* NOTE: install buttons, beforeinstallprompt and
      appinstalled are handled by pwa.js. Wiring them here
      as well fired installApp() twice per click, which
@@ -1913,6 +1869,29 @@
 
   function playRetroBeep() {
     if (!state.soundEnabled) {
+      return;
+    }
+
+    /* Delegate to the shared sound manager — it reuses a
+       single AudioContext instead of creating a new one
+       per click (which browsers eventually refuse). */
+
+    if (
+      window.Notifications &&
+      typeof Notifications.playRetroNotificationSound ===
+        "function"
+    ) {
+      Notifications.unlockNotificationAudio()
+        .then(() =>
+          Notifications.playRetroNotificationSound()
+        )
+        .catch((error) =>
+          console.warn(
+            "[TODO MACHINE] Sound unavailable:",
+            error
+          )
+        );
+
       return;
     }
 
@@ -2333,9 +2312,11 @@
       return;
     }
 
-    TaskStore.subscribe(
-      renderAll
-    );
+    TaskStore.subscribe((tasks) => {
+      renderAll(tasks);
+
+      checkReminders();
+    });
   }
 
   /* =========================================================
@@ -2387,6 +2368,181 @@
         );
       }
     }
+  }
+
+  /* =========================================================
+     FOREGROUND REMINDER SCHEDULER
+     The Supabase cron handles background delivery (when the
+     app is closed). This scheduler covers the foreground:
+     it checks due reminders on an interval, on visibility
+     change and on focus, and de-duplicates each reminder
+     with a stable id (taskId-notification_at) so a refresh,
+     re-render or repeated visibility event can never fire
+     the same reminder twice.
+     ========================================================= */
+
+  const FIRED_REMINDERS_KEY =
+    "todoMachine.firedReminders";
+
+  const MISSED_REMINDER_WINDOW =
+    12 * 60 * 60 * 1000; /* 12 hours */
+
+  function getFiredReminders() {
+    try {
+      const parsed = JSON.parse(
+        localStorage.getItem(
+          FIRED_REMINDERS_KEY
+        )
+      );
+
+      return Array.isArray(parsed)
+        ? parsed
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function markReminderFired(id) {
+    const fired =
+      getFiredReminders();
+
+    fired.push(id);
+
+    try {
+      localStorage.setItem(
+        FIRED_REMINDERS_KEY,
+
+        JSON.stringify(
+          fired.slice(-200)
+        )
+      );
+    } catch {
+      /* storage full/unavailable — in-memory only */
+    }
+  }
+
+  function checkReminders() {
+    if (
+      !window.TaskStore ||
+      !window.Notifications
+    ) {
+      return;
+    }
+
+    const now = Date.now();
+
+    const fired =
+      new Set(getFiredReminders());
+
+    for (const task of TaskStore.all()) {
+      if (
+        task.completed ||
+        task.notification_enabled ===
+          false ||
+        !task.notification_at
+      ) {
+        continue;
+      }
+
+      const due =
+        Date.parse(task.notification_at);
+
+      if (
+        Number.isNaN(due) ||
+        due > now ||
+        now - due >
+          MISSED_REMINDER_WINDOW
+      ) {
+        continue;
+      }
+
+      const reminderId =
+        `${task.id}-${task.notification_at}`;
+
+      if (fired.has(reminderId)) {
+        continue;
+      }
+
+      markReminderFired(reminderId);
+
+      console.log(
+        "[TODO MACHINE] Reminder triggered:",
+        task.title
+      );
+
+      /* System notification only when the tab is hidden —
+         while visible, the in-app toast + sound suffice. */
+
+      if (
+        document.visibilityState !==
+          "visible" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        try {
+          new Notification(
+            "TODO MACHINE",
+            {
+              body: task.title,
+
+              icon:
+                "./assets/icon-192.png",
+
+              tag: reminderId
+            }
+          );
+        } catch (error) {
+          console.warn(
+            "[TODO MACHINE] Notification failed:",
+            error
+          );
+        }
+      }
+
+      if (state.soundEnabled) {
+        try {
+          Notifications.unlockNotificationAudio()
+            .then(() =>
+              Notifications.playRetroNotificationSound()
+            )
+            .catch(() => {});
+        } catch {
+          /* sound must never break reminders */
+        }
+      }
+
+      toast(
+        "⏰ REMINDER",
+        task.title
+      );
+    }
+  }
+
+  function startReminderScheduler() {
+    checkReminders();
+
+    setInterval(
+      checkReminders,
+      30000
+    );
+
+    document.addEventListener(
+      "visibilitychange",
+      () => {
+        if (
+          document.visibilityState ===
+          "visible"
+        ) {
+          checkReminders();
+        }
+      }
+    );
+
+    window.addEventListener(
+      "focus",
+      checkReminders
+    );
   }
 
   /* =========================================================
@@ -2454,6 +2610,10 @@
     /* Notification watcher */
 
     setupNotificationWatcher();
+
+    /* Foreground reminders */
+
+    startReminderScheduler();
 
     /* Initial UI */
 
