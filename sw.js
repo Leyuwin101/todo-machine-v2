@@ -5,41 +5,30 @@
 
 "use strict";
 
-
 /* =========================================================
    CACHE
    ========================================================= */
 
 const CACHE_NAME =
-  "todo-machine-v4";
-
+  "todo-machine-v5";
 
 const APP_SHELL = [
-
   "./",
-
   "./index.html",
-
   "./manifest.json",
 
   "./css/style.css",
 
   "./js/config.js",
-
   "./js/database.js",
-
   "./js/tasks.js",
-
   "./js/notifications.js",
-
   "./js/pwa.js",
-
   "./js/app.js",
 
-  "./assets/icon-192.png"
-
+  "./assets/icon-192.png",
+  "./assets/icon-512.png"
 ];
-
 
 /* =========================================================
    INSTALL
@@ -47,59 +36,31 @@ const APP_SHELL = [
 
 self.addEventListener(
   "install",
-  (event) => {
-
+  event => {
     console.log(
       "[SW] Installing..."
     );
 
-
     event.waitUntil(
-
       caches
-        .open(
-          CACHE_NAME
-        )
-
-        .then(
-          (cache) => {
-
-            console.log(
-              "[SW] Caching application shell"
-            );
-
-
-            return cache.addAll(
-              APP_SHELL
-            );
-
-          }
-        )
-
-        .then(
-          () => {
-
-            return self.skipWaiting();
-
-          }
-        )
-
-        .catch(
-          (error) => {
-
-            console.error(
-              "[SW] Cache installation failed:",
-              error
-            );
-
-          }
-        )
-
+        .open(CACHE_NAME)
+        .then(cache => {
+          return cache.addAll(
+            APP_SHELL
+          );
+        })
+        .then(() => {
+          return self.skipWaiting();
+        })
+        .catch(error => {
+          console.error(
+            "[SW] Cache installation failed:",
+            error
+          );
+        })
     );
-
   }
 );
-
 
 /* =========================================================
    ACTIVATE
@@ -107,64 +68,40 @@ self.addEventListener(
 
 self.addEventListener(
   "activate",
-  (event) => {
-
+  event => {
     console.log(
       "[SW] Activating..."
     );
 
-
     event.waitUntil(
-
       caches
         .keys()
+        .then(cacheNames => {
+          return Promise.all(
+            cacheNames
+              .filter(
+                name =>
+                  name !==
+                  CACHE_NAME
+              )
+              .map(name => {
+                console.log(
+                  "[SW] Removing old cache:",
+                  name
+                );
 
-        .then(
-          (cacheNames) => {
-
-            return Promise.all(
-
-              cacheNames
-                .filter(
-                  (name) =>
-                    name !==
-                    CACHE_NAME
-                )
-
-                .map(
-                  (name) => {
-
-                    console.log(
-                      "[SW] Removing old cache:",
-                      name
-                    );
-
-
-                    return caches.delete(
-                      name
-                    );
-
-                  }
-                )
-
-            );
-
-          }
-        )
-
-        .then(
-          () => {
-
-            return self.clients.claim();
-
-          }
-        )
-
+                return caches.delete(
+                  name
+                );
+              })
+          );
+        })
+        .then(() => {
+          return self.clients.claim();
+        })
     );
-
   }
 );
-
 
 /* =========================================================
    FETCH
@@ -172,38 +109,27 @@ self.addEventListener(
 
 self.addEventListener(
   "fetch",
-  (event) => {
-
+  event => {
     const request =
       event.request;
-
-
-    /*
-     * GET only.
-     */
 
     if (
       request.method !==
       "GET"
     ) {
-
       return;
-
     }
-
 
     const url =
       new URL(
         request.url
       );
 
-
-    /*
-     * Never cache API requests.
-     */
+    /* -----------------------------------------------------
+       NEVER CACHE SUPABASE/API
+       ----------------------------------------------------- */
 
     if (
-
       url.hostname.includes(
         "supabase.co"
       ) ||
@@ -214,163 +140,102 @@ self.addEventListener(
 
       url.pathname.includes(
         "/auth/"
+      ) ||
+
+      url.pathname.includes(
+        "/functions/"
       )
-
     ) {
-
       return;
-
     }
 
-
-    /*
-     * Navigation:
-     *
-     * Network first,
-     * cache fallback.
-     */
+    /* -----------------------------------------------------
+       NAVIGATION
+       ----------------------------------------------------- */
 
     if (
       request.mode ===
       "navigate"
     ) {
-
       event.respondWith(
-
-        fetch(
-          request
-        )
-
-        .then(
-          (response) => {
-
+        fetch(request)
+          .then(response => {
             if (
               response.ok
             ) {
-
               const clone =
                 response.clone();
-
 
               caches
                 .open(
                   CACHE_NAME
                 )
-                .then(
-                  (cache) => {
-
-                    cache.put(
-                      request,
-                      clone
-                    );
-
-                  }
-                );
-
+                .then(cache => {
+                  cache.put(
+                    request,
+                    clone
+                  );
+                });
             }
 
-
             return response;
-
-          }
-        )
-
-        .catch(
-          async () => {
+          })
+          .catch(async () => {
+            const cached =
+              await caches.match(
+                request
+              );
 
             return (
-              caches.match(
-                request
-              ) ||
-
+              cached ||
               caches.match(
                 "./index.html"
               )
             );
-
-          }
-        )
-
+          })
       );
 
-
       return;
-
     }
 
-
-    /*
-     * Static resources:
-     *
-     * Cache first,
-     * network fallback.
-     */
+    /* -----------------------------------------------------
+       STATIC FILES
+       ----------------------------------------------------- */
 
     event.respondWith(
-
       caches
-        .match(
-          request
-        )
-
-        .then(
-          (cachedResponse) => {
-
-            if (
-              cachedResponse
-            ) {
-
-              return cachedResponse;
-
-            }
-
-
-            return fetch(
-              request
-            )
-
-            .then(
-              (response) => {
-
-                if (
-                  response.ok
-                ) {
-
-                  const clone =
-                    response.clone();
-
-
-                  caches
-                    .open(
-                      CACHE_NAME
-                    )
-                    .then(
-                      (cache) => {
-
-                        cache.put(
-                          request,
-                          clone
-                        );
-
-                      }
-                    );
-
-                }
-
-
-                return response;
-
-              }
-            );
-
+        .match(request)
+        .then(cached => {
+          if (cached) {
+            return cached;
           }
-        )
 
+          return fetch(request)
+            .then(response => {
+              if (
+                response.ok
+              ) {
+                const clone =
+                  response.clone();
+
+                caches
+                  .open(
+                    CACHE_NAME
+                  )
+                  .then(cache => {
+                    cache.put(
+                      request,
+                      clone
+                    );
+                  });
+              }
+
+              return response;
+            });
+        })
     );
-
   }
 );
-
 
 /* =========================================================
    PUSH NOTIFICATION
@@ -378,46 +243,34 @@ self.addEventListener(
 
 self.addEventListener(
   "push",
-  (event) => {
-
+  event => {
     let data = {};
 
-
     try {
-
       data =
         event.data
           ? event.data.json()
           : {};
-
     } catch (error) {
-
       console.error(
         "[SW] Invalid push payload:",
         error
       );
 
-
       data = {
-
         title:
           "TODO MACHINE",
 
         body:
           "You have a task reminder."
-
       };
-
     }
-
 
     const title =
       data.title ||
       "TODO MACHINE";
 
-
     const options = {
-
       body:
         data.body ||
         "You have a task reminder.",
@@ -428,8 +281,7 @@ self.addEventListener(
       badge:
         "./assets/icon-192.png",
 
-      silent:
-        false,
+      silent: false,
 
       vibrate: [
         100,
@@ -441,14 +293,12 @@ self.addEventListener(
         data.tag ||
         "todo-machine-reminder",
 
-      renotify:
-        true,
+      renotify: true,
 
       requireInteraction:
         false,
 
       data: {
-
         url:
           data.url ||
           "./index.html",
@@ -456,16 +306,11 @@ self.addEventListener(
         taskId:
           data.taskId ||
           null
-
       }
-
     };
 
-
     event.waitUntil(
-
       Promise.all([
-
         self.registration.showNotification(
           title,
           options
@@ -474,52 +319,38 @@ self.addEventListener(
         notifyOpenWindows(
           data
         )
-
       ])
-
     );
-
   }
 );
 
-
 /* =========================================================
-   SEND PUSH EVENT TO OPEN WINDOWS
+   SEND PUSH TO OPEN WINDOWS
    ========================================================= */
 
 async function notifyOpenWindows(
   data
 ) {
-
   const clients =
-    await self.clients.matchAll({
-
-      type: "window",
-
-      includeUncontrolled:
-        true
-
-    });
-
+    await self.clients.matchAll(
+      {
+        type: "window",
+        includeUncontrolled: true
+      }
+    );
 
   for (
     const client of clients
   ) {
-
     client.postMessage({
-
       type:
         "TODO_PUSH_RECEIVED",
 
       payload:
         data
-
     });
-
   }
-
 }
-
 
 /* =========================================================
    NOTIFICATION CLICK
@@ -527,90 +358,71 @@ async function notifyOpenWindows(
 
 self.addEventListener(
   "notificationclick",
-  (event) => {
-
+  event => {
     event.notification.close();
-
 
     const url =
       event.notification
         .data?.url ||
       "./index.html";
 
-
     event.waitUntil(
-
       self.clients
         .matchAll({
-
           type: "window",
-
-          includeUncontrolled:
-            true
-
+          includeUncontrolled: true
         })
-
-        .then(
-          async (clients) => {
-
-            /*
-             * Existing TODO MACHINE window.
-             */
-
-            for (
-              const client of clients
+        .then(async clients => {
+          for (
+            const client of clients
+          ) {
+            if (
+              "focus" in client
             ) {
-
-              if (
-                "focus" in client
-              ) {
-
+              try {
                 if (
-                  "navigate" in client
+                  "navigate" in
+                  client
                 ) {
-
-                  try {
-
-                    await client.navigate(
-                      url
-                    );
-
-                  } catch {
-
-                    /*
-                     * Ignore navigation errors.
-                     */
-
-                  }
-
+                  await client.navigate(
+                    url
+                  );
                 }
-
-
-                return client.focus();
-
+              } catch {
+                /* Ignore navigation errors. */
               }
 
+              return client.focus();
             }
-
-
-            /*
-             * Open new window.
-             */
-
-            if (
-              self.clients.openWindow
-            ) {
-
-              return self.clients.openWindow(
-                url
-              );
-
-            }
-
           }
-        )
 
+          if (
+            self.clients
+              .openWindow
+          ) {
+            return self.clients.openWindow(
+              url
+            );
+          }
+
+          return null;
+        })
     );
+  }
+);
 
+/* =========================================================
+   MESSAGE
+   ========================================================= */
+
+self.addEventListener(
+  "message",
+  event => {
+    if (
+      event.data?.type ===
+      "SKIP_WAITING"
+    ) {
+      self.skipWaiting();
+    }
   }
 );

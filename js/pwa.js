@@ -1,209 +1,339 @@
 /* =========================================================
    TODO MACHINE
-   PWA INSTALLATION
+   PWA / INSTALLATION
    ========================================================= */
 
-(function () {
-
+(() => {
   "use strict";
 
   let deferredInstallPrompt = null;
+  let registration = null;
 
-  const installButton =
+  /* =======================================================
+     ELEMENTS
+     ======================================================= */
+
+  const installButtons = [
     document.getElementById(
       "installAppBtn"
-    );
+    ),
+
+    document.getElementById(
+      "settingsInstallBtn"
+    ),
+
+    document.getElementById(
+      "installAppSettingsBtn"
+    )
+  ].filter(Boolean);
 
   const appModeStatus =
     document.getElementById(
       "appModeStatus"
     );
 
+  const settingsAppMode =
+    document.getElementById(
+      "settingsAppMode"
+    );
+
+  const settingsSwStatus =
+    document.getElementById(
+      "settingsSwStatus"
+    );
+
   /* =======================================================
-     DETECT STANDALONE MODE
+     STANDALONE CHECK
      ======================================================= */
 
   function isStandalone() {
-
-    return (
-      window.matchMedia(
+    return Boolean(
+      window.matchMedia?.(
         "(display-mode: standalone)"
       ).matches ||
 
-      window.navigator.standalone === true
+      window.navigator
+        .standalone === true
     );
   }
 
   /* =======================================================
-     UPDATE APP MODE
+     IOS CHECK
      ======================================================= */
 
-  function updateAppMode() {
+  function isIOS() {
+    return /iphone|ipad|ipod/i.test(
+      navigator.userAgent
+    );
+  }
 
+  /* =======================================================
+     STATUS
+     ======================================================= */
+
+  function updateStatus() {
     const standalone =
       isStandalone();
 
-    if (standalone) {
+    const mode =
+      standalone
+        ? "STANDALONE MODE"
+        : "BROWSER MODE";
 
-      document.documentElement
-        .classList.add(
-          "standalone-mode"
-        );
+    document.documentElement.classList.toggle(
+      "standalone-mode",
+      standalone
+    );
 
-      if (appModeStatus) {
+    if (appModeStatus) {
+      appModeStatus.textContent =
+        mode;
+    }
 
-        appModeStatus.textContent =
-          "STANDALONE MODE";
+    if (settingsAppMode) {
+      settingsAppMode.textContent =
+        mode;
+    }
 
+    window.dispatchEvent(
+      new CustomEvent(
+        "todo:pwa-status",
+        {
+          detail: {
+            standalone,
+
+            serviceWorker:
+              Boolean(
+                registration
+              ),
+
+            installAvailable:
+              Boolean(
+                deferredInstallPrompt
+              )
+          }
+        }
+      )
+    );
+  }
+
+  /* =======================================================
+     INSTALL BUTTONS
+     ======================================================= */
+
+  function updateInstallButtons() {
+    const standalone =
+      isStandalone();
+
+    const available =
+      Boolean(
+        deferredInstallPrompt
+      ) &&
+      !standalone;
+
+    installButtons.forEach(
+      button => {
+        if (
+          button.id ===
+          "installAppBtn"
+        ) {
+          button.hidden =
+            !available;
+        }
+
+        if (
+          button.id ===
+            "settingsInstallBtn" ||
+          button.id ===
+            "installAppSettingsBtn"
+        ) {
+          button.textContent =
+            standalone
+              ? "INSTALLED"
+              : "INSTALL";
+
+          button.disabled =
+            standalone;
+        }
       }
+    );
+  }
 
-    } else {
+  /* =======================================================
+     INSTALL APP
+     ======================================================= */
 
-      document.documentElement
-        .classList.remove(
-          "standalone-mode"
-        );
+  async function installApp() {
+    if (isStandalone()) {
+      return;
+    }
 
-      if (appModeStatus) {
+    if (!deferredInstallPrompt) {
+      const message =
+        isIOS()
+          ? "On iPhone/iPad: tap Share, then choose Add to Home Screen."
+          : "Open your browser menu and choose Install TODO MACHINE or Add to Home screen.";
 
-        appModeStatus.textContent =
-          "BROWSER MODE";
+      alert(message);
 
-      }
+      return;
+    }
+
+    try {
+      deferredInstallPrompt.prompt();
+
+      const result =
+        await deferredInstallPrompt.userChoice;
+
+      console.log(
+        "[PWA] Install result:",
+        result.outcome
+      );
+
+    } catch (error) {
+      console.error(
+        "[PWA] Installation failed:",
+        error
+      );
+
+    } finally {
+      deferredInstallPrompt =
+        null;
+
+      updateInstallButtons();
+      updateStatus();
     }
   }
 
   /* =======================================================
-     BEFORE INSTALL PROMPT
+     INSTALL EVENTS
      ======================================================= */
+
+  installButtons.forEach(
+    button =>
+      button.addEventListener(
+        "click",
+        installApp
+      )
+  );
 
   window.addEventListener(
     "beforeinstallprompt",
-    (event) => {
-
-      console.log(
-        "[PWA] Install available"
-      );
-
+    event => {
       event.preventDefault();
 
       deferredInstallPrompt =
         event;
 
-      if (installButton) {
-
-        installButton.hidden =
-          false;
-      }
-
+      updateInstallButtons();
+      updateStatus();
     }
   );
-
-  /* =======================================================
-     INSTALL APPLICATION
-     ======================================================= */
-
-  if (installButton) {
-
-    installButton.addEventListener(
-      "click",
-      async () => {
-
-        if (!deferredInstallPrompt) {
-
-          /*
-           * Browser doesn't currently
-           * support the install prompt.
-           */
-          alert(
-            "Use your browser's Install App option to install TODO MACHINE."
-          );
-
-          return;
-        }
-
-        try {
-
-          await deferredInstallPrompt.prompt();
-
-          const result =
-            await deferredInstallPrompt
-              .userChoice;
-
-          console.log(
-            "[PWA] Install result:",
-            result.outcome
-          );
-
-        } catch (error) {
-
-          console.error(
-            "[PWA] Installation error:",
-            error
-          );
-
-        }
-
-        deferredInstallPrompt =
-          null;
-
-        installButton.hidden =
-          true;
-      }
-    );
-
-  }
-
-  /* =======================================================
-     APP INSTALLED
-     ======================================================= */
 
   window.addEventListener(
     "appinstalled",
     () => {
-
       console.log(
-        "[PWA] TODO MACHINE installed"
+        "[PWA] TODO MACHINE installed."
       );
 
       deferredInstallPrompt =
         null;
 
-      if (installButton) {
-
-        installButton.hidden =
-          true;
-
-      }
-
-      updateAppMode();
+      updateInstallButtons();
+      updateStatus();
     }
   );
 
   /* =======================================================
-     DISPLAY MODE CHANGE
+     DISPLAY MODE
      ======================================================= */
 
   const standaloneMedia =
-    window.matchMedia(
+    window.matchMedia?.(
       "(display-mode: standalone)"
     );
 
-  if (
-    standaloneMedia.addEventListener
-  ) {
+  standaloneMedia?.addEventListener?.(
+    "change",
+    () => {
+      updateStatus();
+      updateInstallButtons();
+    }
+  );
 
-    standaloneMedia.addEventListener(
-      "change",
-      updateAppMode
-    );
+  /* =======================================================
+     SERVICE WORKER
+     ======================================================= */
 
+  async function registerServiceWorker() {
+    if (
+      !("serviceWorker" in
+        navigator)
+    ) {
+      if (settingsSwStatus) {
+        settingsSwStatus.textContent =
+          "NOT SUPPORTED";
+      }
+
+      updateStatus();
+
+      return;
+    }
+
+    try {
+      registration =
+        await navigator.serviceWorker.register(
+          "./sw.js",
+          {
+            scope: "./"
+          }
+        );
+
+      if (settingsSwStatus) {
+        settingsSwStatus.textContent =
+          "ACTIVE";
+      }
+
+      console.log(
+        "[PWA] Service worker registered:",
+        registration.scope
+      );
+
+    } catch (error) {
+      if (settingsSwStatus) {
+        settingsSwStatus.textContent =
+          "ERROR";
+      }
+
+      console.error(
+        "[PWA] Service worker registration failed:",
+        error
+      );
+    }
+
+    updateStatus();
   }
 
   /* =======================================================
      INITIAL STATE
      ======================================================= */
 
-  updateAppMode();
+  updateStatus();
+  updateInstallButtons();
 
+  if (
+    document.readyState ===
+    "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      registerServiceWorker,
+      {
+        once: true
+      }
+    );
+  } else {
+    registerServiceWorker();
+  }
 })();

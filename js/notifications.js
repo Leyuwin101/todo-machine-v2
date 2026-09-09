@@ -1,5 +1,13 @@
+/* =========================================================
+   TODO MACHINE
+   NOTIFICATION + PUSH SYSTEM
+   ========================================================= */
+
 "use strict";
 
+/* =========================================================
+   STORAGE
+   ========================================================= */
 
 const NOTIFICATION_SOUND_KEY =
   "todoMachineNotificationSound";
@@ -7,10 +15,16 @@ const NOTIFICATION_SOUND_KEY =
 const PUSH_DEVICE_KEY =
   "todoMachinePushDeviceId";
 
+/* =========================================================
+   AUDIO
+   ========================================================= */
+
 let notificationAudioContext = null;
+let notificationStarted = false;
 
-let pushStarted = false;
-
+/* =========================================================
+   SOUND STATE
+   ========================================================= */
 
 function isNotificationSoundEnabled() {
   return (
@@ -20,23 +34,33 @@ function isNotificationSoundEnabled() {
   );
 }
 
-function setNotificationSoundEnabled(enabled) {
+function setNotificationSoundEnabled(
+  enabled
+) {
+  const value =
+    Boolean(enabled);
+
   localStorage.setItem(
     NOTIFICATION_SOUND_KEY,
-    enabled ? "true" : "false"
+    value ? "true" : "false"
   );
 
-  const settingsToggle =
-    document.getElementById(
-      "settingsSoundToggle"
-    );
+  [
+    "notificationSoundToggle",
+    "settingsSoundToggle"
+  ].forEach(id => {
+    const input =
+      document.getElementById(id);
 
-  if (settingsToggle) {
-    settingsToggle.checked = enabled;
-  }
+    if (input) {
+      input.checked = value;
+    }
+  });
 }
 
-
+/* =========================================================
+   AUDIO CONTEXT
+   ========================================================= */
 
 function createNotificationAudio() {
   if (notificationAudioContext) {
@@ -61,30 +85,40 @@ function createNotificationAudio() {
   return notificationAudioContext;
 }
 
-
+/* =========================================================
+   UNLOCK AUDIO
+   ========================================================= */
 
 async function unlockNotificationAudio() {
   const context =
     createNotificationAudio();
 
-  if (!context) {
+  if (
+    !context ||
+    context.state !==
+      "suspended"
+  ) {
     return;
   }
 
-  if (context.state === "suspended") {
-    try {
-      await context.resume();
-    } catch (error) {
-      console.warn(
-        "[NOTIFICATION] Unable to unlock audio:",
-        error
-      );
-    }
+  try {
+    await context.resume();
+  } catch (error) {
+    console.warn(
+      "[NOTIFICATION] Audio unlock failed:",
+      error
+    );
   }
 }
 
+/* =========================================================
+   RETRO SOUND
+   ========================================================= */
+
 async function playRetroNotificationSound() {
-  if (!isNotificationSoundEnabled()) {
+  if (
+    !isNotificationSoundEnabled()
+  ) {
     return;
   }
 
@@ -95,165 +129,99 @@ async function playRetroNotificationSound() {
     return;
   }
 
-  if (context.state === "suspended") {
-    try {
+  try {
+    if (
+      context.state ===
+      "suspended"
+    ) {
       await context.resume();
-    } catch {
-      return;
     }
+  } catch {
+    return;
   }
 
   const now =
     context.currentTime;
 
-  const oscillator1 =
-    context.createOscillator();
+  const tones = [
+    {
+      frequency: 880,
+      start: 0,
+      end: 0.13
+    },
+    {
+      frequency: 1174,
+      start: 0.14,
+      end: 0.31
+    }
+  ];
 
-  const gain1 =
-    context.createGain();
+  tones.forEach(
+    ({
+      frequency,
+      start,
+      end
+    }) => {
+      const oscillator =
+        context.createOscillator();
 
-  oscillator1.type = "square";
+      const gain =
+        context.createGain();
 
-  oscillator1.frequency.setValueAtTime(
-    880,
-    now
+      oscillator.type =
+        "square";
+
+      oscillator.frequency.setValueAtTime(
+        frequency,
+        now + start
+      );
+
+      gain.gain.setValueAtTime(
+        0.0001,
+        now + start
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.08,
+        now + start + 0.015
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + end
+      );
+
+      oscillator.connect(gain);
+      gain.connect(
+        context.destination
+      );
+
+      oscillator.start(
+        now + start
+      );
+
+      oscillator.stop(
+        now + end
+      );
+    }
   );
-
-  gain1.gain.setValueAtTime(
-    0.0001,
-    now
-  );
-
-  gain1.gain.exponentialRampToValueAtTime(
-    0.08,
-    now + 0.015
-  );
-
-  gain1.gain.exponentialRampToValueAtTime(
-    0.0001,
-    now + 0.12
-  );
-
-  oscillator1.connect(gain1);
-  gain1.connect(context.destination);
-
-  oscillator1.start(now);
-  oscillator1.stop(now + 0.13);
-
-  /* -------------------------------------------------------
-     SECOND BEEP
-     ------------------------------------------------------- */
-
-  const oscillator2 =
-    context.createOscillator();
-
-  const gain2 =
-    context.createGain();
-
-  oscillator2.type = "square";
-
-  oscillator2.frequency.setValueAtTime(
-    1174,
-    now + 0.14
-  );
-
-  gain2.gain.setValueAtTime(
-    0.0001,
-    now + 0.14
-  );
-
-  gain2.gain.exponentialRampToValueAtTime(
-    0.08,
-    now + 0.155
-  );
-
-  gain2.gain.exponentialRampToValueAtTime(
-    0.0001,
-    now + 0.30
-  );
-
-  oscillator2.connect(gain2);
-  gain2.connect(context.destination);
-
-  oscillator2.start(now + 0.14);
-  oscillator2.stop(now + 0.31);
 }
 
 /* =========================================================
-   AUDIO UNLOCK
+   UNLOCK ON USER INTERACTION
    ========================================================= */
 
 document.addEventListener(
   "pointerdown",
-  () => {
-    unlockNotificationAudio();
-  },
-  { once: true }
+  () =>
+    unlockNotificationAudio(),
+  {
+    once: true
+  }
 );
 
 /* =========================================================
-   VAPID KEY CONVERSION
-   ========================================================= */
-
-function urlBase64ToUint8Array(base64String) {
-  const padding =
-    "=".repeat(
-      (4 - (base64String.length % 4)) % 4
-    );
-
-  const base64 =
-    (
-      base64String +
-      padding
-    )
-      .replace(/-/g, "+")
-      .replace(/_/g, "/");
-
-  const rawData =
-    window.atob(base64);
-
-  const outputArray =
-    new Uint8Array(
-      rawData.length
-    );
-
-  for (
-    let i = 0;
-    i < rawData.length;
-    i++
-  ) {
-    outputArray[i] =
-      rawData.charCodeAt(i);
-  }
-
-  return outputArray;
-}
-
-/* =========================================================
-   DEVICE ID
-   ========================================================= */
-
-function getPushDeviceId() {
-  let deviceId =
-    localStorage.getItem(
-      PUSH_DEVICE_KEY
-    );
-
-  if (!deviceId) {
-    deviceId =
-      crypto.randomUUID();
-
-    localStorage.setItem(
-      PUSH_DEVICE_KEY,
-      deviceId
-    );
-  }
-
-  return deviceId;
-}
-
-/* =========================================================
-   CHECK PUSH SUPPORT
+   PUSH SUPPORT
    ========================================================= */
 
 function isPushSupported() {
@@ -265,13 +233,84 @@ function isPushSupported() {
 }
 
 /* =========================================================
-   GET SERVICE WORKER
+   VAPID KEY
+   ========================================================= */
+
+function urlBase64ToUint8Array(
+  value
+) {
+  const padding =
+    "=".repeat(
+      (4 -
+        (value.length % 4)) %
+        4
+    );
+
+  const base64 =
+    (
+      value + padding
+    )
+      .replace(/-/g, "+")
+      .replace(/_/g, "/");
+
+  const raw =
+    window.atob(base64);
+
+  const output =
+    new Uint8Array(
+      raw.length
+    );
+
+  for (
+    let index = 0;
+    index < raw.length;
+    index++
+  ) {
+    output[index] =
+      raw.charCodeAt(index);
+  }
+
+  return output;
+}
+
+/* =========================================================
+   DEVICE ID
+   ========================================================= */
+
+function getPushDeviceId() {
+  let id =
+    localStorage.getItem(
+      PUSH_DEVICE_KEY
+    );
+
+  if (!id) {
+    id =
+      crypto?.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random()
+            .toString(36)
+            .slice(2)}`;
+
+    localStorage.setItem(
+      PUSH_DEVICE_KEY,
+      id
+    );
+  }
+
+  return id;
+}
+
+/* =========================================================
+   SERVICE WORKER
    ========================================================= */
 
 async function getServiceWorkerRegistration() {
-  if (!("serviceWorker" in navigator)) {
+  if (
+    !("serviceWorker" in
+      navigator)
+  ) {
     throw new Error(
-      "Service workers are not supported by this browser."
+      "Service workers are not supported."
     );
   }
 
@@ -279,14 +318,44 @@ async function getServiceWorkerRegistration() {
 }
 
 /* =========================================================
-   GET CURRENT SUBSCRIPTION
+   GET SUBSCRIPTION
    ========================================================= */
 
 async function getPushSubscription() {
   const registration =
     await getServiceWorkerRegistration();
 
-  return registration.pushManager.getSubscription();
+  return registration.pushManager
+    .getSubscription();
+}
+
+/* =========================================================
+   PUSH STATUS
+   ========================================================= */
+
+async function getPushStatus() {
+  if (!isPushSupported()) {
+    return {
+      supported: false,
+      permission: "unsupported",
+      subscribed: false
+    };
+  }
+
+  const subscription =
+    await getPushSubscription();
+
+  return {
+    supported: true,
+
+    permission:
+      Notification.permission,
+
+    subscribed:
+      Boolean(subscription),
+
+    subscription
+  };
 }
 
 /* =========================================================
@@ -300,78 +369,66 @@ async function enablePush() {
     };
   }
 
-  if (
-    !window.TODO_CONFIG ||
-    !window.TODO_CONFIG.vapidPublicKey
-  ) {
+  const vapidKey =
+    window.TODO_CONFIG
+      ?.vapidPublicKey;
+
+  if (!vapidKey) {
     throw new Error(
       "VAPID public key is missing from js/config.js."
     );
   }
 
-  /* -------------------------------------------------------
-     REQUEST PERMISSION
-     ------------------------------------------------------- */
-
   let permission =
     Notification.permission;
 
-  if (permission === "default") {
+  if (
+    permission ===
+    "default"
+  ) {
     permission =
       await Notification.requestPermission();
   }
 
-  if (permission !== "granted") {
+  if (
+    permission !==
+    "granted"
+  ) {
+    updatePushButtons(
+      permission === "denied"
+        ? "blocked"
+        : "disabled"
+    );
+
     return {
       status:
-        permission === "denied"
+        permission ===
+        "denied"
           ? "denied"
           : "default"
     };
   }
 
-  /* -------------------------------------------------------
-     GET SERVICE WORKER
-     ------------------------------------------------------- */
-
   const registration =
     await getServiceWorkerRegistration();
 
-  /* -------------------------------------------------------
-     CHECK EXISTING SUBSCRIPTION
-     ------------------------------------------------------- */
-
   let subscription =
-    await registration.pushManager.getSubscription();
-
-  /* -------------------------------------------------------
-     CREATE SUBSCRIPTION
-     ------------------------------------------------------- */
+    await registration.pushManager
+      .getSubscription();
 
   if (!subscription) {
     subscription =
-      await registration.pushManager.subscribe({
-        userVisibleOnly: true,
+      await registration.pushManager.subscribe(
+        {
+          userVisibleOnly: true,
 
-        applicationServerKey:
-          urlBase64ToUint8Array(
-            window.TODO_CONFIG.vapidPublicKey
-          )
-      });
+          applicationServerKey:
+            urlBase64ToUint8Array(
+              vapidKey
+            )
+        }
+      );
   }
-
-  /* -------------------------------------------------------
-     SAVE SUBSCRIPTION
-     ------------------------------------------------------- */
-
-  const deviceId =
-    getPushDeviceId();
-
-  const timezone =
-    Intl.DateTimeFormat()
-      .resolvedOptions()
-      .timeZone ||
-    "UTC";
 
   if (
     !window.TodoDB ||
@@ -379,33 +436,43 @@ async function enablePush() {
       "function"
   ) {
     throw new Error(
-      "Database push subscription support is unavailable."
+      "Push database support is not loaded."
     );
   }
 
   await TodoDB.upsertPushSubscription(
     subscription.toJSON(),
-    deviceId,
-    timezone
+    getPushDeviceId(),
+    Intl.DateTimeFormat()
+      .resolvedOptions()
+      .timeZone ||
+      "UTC"
   );
 
-  pushStarted = true;
+  updatePushButtons(
+    "enabled"
+  );
+
+  const detail = {
+    supported: true,
+    permission: "granted",
+    subscribed: true,
+    subscription
+  };
 
   window.dispatchEvent(
     new CustomEvent(
       "push:status",
       {
-        detail: {
-          enabled: true,
-          permission,
-          subscription
-        }
+        detail
       }
     )
   );
 
   return {
-    status: "subscribed",
+    status:
+      "subscribed",
+
     subscription
   };
 }
@@ -426,7 +493,8 @@ async function disablePush() {
 
   if (!subscription) {
     return {
-      status: "not-subscribed"
+      status:
+        "not-subscribed"
     };
   }
 
@@ -442,237 +510,194 @@ async function disablePush() {
     }
   } catch (error) {
     console.warn(
-      "[PUSH] Unable to remove server subscription:",
+      "[PUSH] Server removal failed:",
       error
     );
   }
 
   await subscription.unsubscribe();
 
-  pushStarted = false;
+  updatePushButtons(
+    "disabled"
+  );
 
   window.dispatchEvent(
     new CustomEvent(
       "push:status",
       {
         detail: {
-          enabled: false
+          supported: true,
+          permission:
+            Notification.permission,
+          subscribed: false
         }
       }
     )
   );
 
   return {
-    status: "unsubscribed"
+    status:
+      "unsubscribed"
   };
 }
 
 /* =========================================================
-   CHECK PUSH STATUS
+   PUSH BUTTON UI
    ========================================================= */
 
-async function getPushStatus() {
-  if (!isPushSupported()) {
-    return {
-      supported: false,
-      permission: "unsupported",
-      subscribed: false
-    };
+function updatePushButtons(
+  state
+) {
+  const buttons = [
+    document.getElementById(
+      "notifyButton"
+    ),
+
+    document.getElementById(
+      "settingsNotifyBtn"
+    )
+  ].filter(Boolean);
+
+  buttons.forEach(
+    button => {
+      if (
+        state === "enabled"
+      ) {
+        button.textContent =
+          "✓ PUSH ENABLED";
+
+      } else if (
+        state === "blocked"
+      ) {
+        button.textContent =
+          "🔕 PUSH BLOCKED";
+
+      } else {
+        button.textContent =
+          "🔔 ENABLE PUSH REMINDERS";
+      }
+    }
+  );
+}
+
+/* =========================================================
+   SERVICE WORKER MESSAGE
+   ========================================================= */
+
+function handleServiceWorkerMessage(
+  event
+) {
+  if (
+    event.data?.type !==
+    "TODO_PUSH_RECEIVED"
+  ) {
+    return;
   }
 
-  const subscription =
-    await getPushSubscription();
+  console.log(
+    "[NOTIFICATION] Reminder received:",
+    event.data.payload
+  );
 
-  return {
-    supported: true,
-    permission:
-      Notification.permission,
-    subscribed:
-      Boolean(subscription),
-    subscription
-  };
+  playRetroNotificationSound();
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "todo:push-received",
+      {
+        detail:
+          event.data.payload
+      }
+    )
+  );
 }
 
 /* =========================================================
    START NOTIFICATION SYSTEM
    ========================================================= */
 
-function start(taskProvider) {
-  if (pushStarted) {
+function start() {
+  if (notificationStarted) {
     return;
   }
 
-  pushStarted = true;
+  notificationStarted =
+    true;
 
-  /* -------------------------------------------------------
-     SERVICE WORKER MESSAGE
-     ------------------------------------------------------- */
-
-  if ("serviceWorker" in navigator) {
+  if (
+    "serviceWorker" in
+    navigator
+  ) {
     navigator.serviceWorker.addEventListener(
       "message",
-      event => {
-        if (
-          event.data?.type ===
-          "TODO_PUSH_RECEIVED"
-        ) {
-          console.log(
-            "[NOTIFICATION] Reminder received:",
-            event.data.payload
-          );
-
-          playRetroNotificationSound();
-
-          window.dispatchEvent(
-            new CustomEvent(
-              "todo:push-received",
-              {
-                detail:
-                  event.data.payload
-              }
-            )
-          );
-        }
-      }
+      handleServiceWorkerMessage
     );
-  }
-
-  /* -------------------------------------------------------
-     CHECK EXISTING PUSH STATUS
-     ------------------------------------------------------- */
-
-  if (isPushSupported()) {
-    getPushStatus()
-      .then(status => {
-        window.dispatchEvent(
-          new CustomEvent(
-            "push:status",
-            {
-              detail: status
-            }
-          )
-        );
-      })
-      .catch(error => {
-        console.warn(
-          "[PUSH] Status check failed:",
-          error
-        );
-      });
-  }
-
-  /* -------------------------------------------------------
-     OPTIONAL TASK PROVIDER
-     ------------------------------------------------------- */
-
-  if (typeof taskProvider === "function") {
-    window.todoMachineTaskProvider =
-      taskProvider;
   }
 }
 
 /* =========================================================
-   SOUND SETTINGS
+   SETTINGS
    ========================================================= */
 
 document.addEventListener(
   "DOMContentLoaded",
-  () => {
-    const toggle =
+  async () => {
+    const soundToggles = [
       document.getElementById(
         "notificationSoundToggle"
-      );
+      ),
 
-    const testButton =
-      document.getElementById(
-        "testNotificationSound"
-      );
-
-    /* -----------------------------------------------------
-       INITIAL VALUE
-       ----------------------------------------------------- */
-
-    if (toggle) {
-      toggle.checked =
-        isNotificationSoundEnabled();
-    }
-
-    /* -----------------------------------------------------
-       SOUND TOGGLE
-       ----------------------------------------------------- */
-
-    if (toggle) {
-      toggle.addEventListener(
-        "change",
-        async () => {
-          const enabled =
-            toggle.checked;
-
-          setNotificationSoundEnabled(
-            enabled
-          );
-
-          if (enabled) {
-            await unlockNotificationAudio();
-            await playRetroNotificationSound();
-          }
-        }
-      );
-    }
-
-    /* -----------------------------------------------------
-       TEST SOUND
-       ----------------------------------------------------- */
-
-    if (testButton) {
-      testButton.addEventListener(
-        "click",
-        async () => {
-          await unlockNotificationAudio();
-          await playRetroNotificationSound();
-        }
-      );
-    }
-
-    /* -----------------------------------------------------
-       SETTINGS SOUND TOGGLE
-       ----------------------------------------------------- */
-
-    const settingsToggle =
       document.getElementById(
         "settingsSoundToggle"
-      );
+      )
+    ].filter(Boolean);
 
-    if (settingsToggle) {
-      settingsToggle.checked =
-        isNotificationSoundEnabled();
+    soundToggles.forEach(
+      toggle => {
+        toggle.checked =
+          isNotificationSoundEnabled();
 
-      settingsToggle.addEventListener(
-        "change",
-        async () => {
-          const enabled =
-            settingsToggle.checked;
+        toggle.addEventListener(
+          "change",
+          async () => {
+            setNotificationSoundEnabled(
+              toggle.checked
+            );
 
-          setNotificationSoundEnabled(
-            enabled
-          );
+            if (
+              toggle.checked
+            ) {
+              await unlockNotificationAudio();
 
-          if (enabled) {
+              await playRetroNotificationSound();
+            }
+          }
+        );
+      }
+    );
+
+    const testButtons = [
+      document.getElementById(
+        "testNotificationSound"
+      ),
+
+      document.getElementById(
+        "settingsTestSound"
+      )
+    ].filter(Boolean);
+
+    testButtons.forEach(
+      button => {
+        button.addEventListener(
+          "click",
+          async () => {
             await unlockNotificationAudio();
+
             await playRetroNotificationSound();
           }
-
-          if (toggle) {
-            toggle.checked =
-              enabled;
-          }
-        }
-      );
-    }
-
-    /* -----------------------------------------------------
-       PUSH SETTINGS BUTTON
-       ----------------------------------------------------- */
+        );
+      }
+    );
 
     const pushButton =
       document.getElementById(
@@ -689,64 +714,71 @@ document.addEventListener(
 
             if (
               result.status ===
-              "subscribed"
+              "denied"
             ) {
-              pushButton.textContent =
-                "✓ PUSH ENABLED";
+              updatePushButtons(
+                "blocked"
+              );
             }
+
           } catch (error) {
             console.error(
               "[PUSH] Setup failed:",
               error
             );
 
-            alert(
-              `PUSH SETUP ERROR\n\n${error.message}`
+            window.dispatchEvent(
+              new CustomEvent(
+                "todo:toast",
+                {
+                  detail: {
+                    title:
+                      "PUSH SETUP ERROR",
+
+                    body:
+                      error.message ||
+                      "Unable to enable push notifications."
+                  }
+                }
+              )
             );
           }
         }
       );
     }
 
-    /* -----------------------------------------------------
-       UPDATE PUSH UI
-       ----------------------------------------------------- */
+    if (
+      isPushSupported()
+    ) {
+      try {
+        const status =
+          await getPushStatus();
 
-    window.addEventListener(
-      "push:status",
-      event => {
-        const detail =
-          event.detail || {};
+        updatePushButtons(
+          status.subscribed
+            ? "enabled"
+            : status.permission ===
+                "denied"
+              ? "blocked"
+              : "disabled"
+        );
 
-        const buttons = [
-          document.getElementById(
-            "notifyButton"
-          ),
-          document.getElementById(
-            "settingsNotifyBtn"
+        window.dispatchEvent(
+          new CustomEvent(
+            "push:status",
+            {
+              detail: status
+            }
           )
-        ].filter(Boolean);
+        );
 
-        buttons.forEach(button => {
-          if (
-            detail.subscribed ||
-            detail.enabled
-          ) {
-            button.textContent =
-              "✓ PUSH ENABLED";
-          } else if (
-            detail.permission ===
-            "denied"
-          ) {
-            button.textContent =
-              "🔕 PUSH BLOCKED";
-          } else {
-            button.textContent =
-              "🔔 ENABLE PUSH REMINDERS";
-          }
-        });
+      } catch (error) {
+        console.warn(
+          "[PUSH] Status check failed:",
+          error
+        );
       }
-    );
+    }
   }
 );
 
