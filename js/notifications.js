@@ -1,107 +1,382 @@
-window.Notifications = (() => {
-  const sent = new Set(JSON.parse(sessionStorage.getItem("todo_sent_notifications") || "[]"));
-  const DEVICE_KEY = "todo_device_id";
+/* =========================================================
+   TODO MACHINE
+   NOTIFICATION SOUND SYSTEM
+   ========================================================= */
 
-  function saveSent() {
-    sessionStorage.setItem("todo_sent_notifications", JSON.stringify([...sent].slice(-300)));
+"use strict";
+
+/* =========================================================
+   STORAGE
+   ========================================================= */
+
+const NOTIFICATION_SOUND_KEY =
+  "todoMachineNotificationSound";
+
+/* =========================================================
+   AUDIO CONTEXT
+   ========================================================= */
+
+let notificationAudioContext =
+  null;
+
+/* =========================================================
+   CHECK SOUND STATE
+   ========================================================= */
+
+function isNotificationSoundEnabled() {
+
+  return (
+    localStorage.getItem(
+      NOTIFICATION_SOUND_KEY
+    ) !== "false"
+  );
+}
+
+/* =========================================================
+   SET SOUND STATE
+   ========================================================= */
+
+function setNotificationSoundEnabled(
+  enabled
+) {
+
+  localStorage.setItem(
+    NOTIFICATION_SOUND_KEY,
+    enabled
+      ? "true"
+      : "false"
+  );
+
+}
+
+/* =========================================================
+   CREATE AUDIO CONTEXT
+   ========================================================= */
+
+function createNotificationAudio() {
+
+  if (
+    notificationAudioContext
+  ) {
+
+    return notificationAudioContext;
+
   }
 
-  function permission() {
-    return "Notification" in window ? Notification.permission : "unsupported";
-  }
+  const AudioContext =
+    window.AudioContext ||
+    window.webkitAudioContext;
 
-  function deviceId() {
-    let id = localStorage.getItem(DEVICE_KEY);
-    if (!id) {
-      id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      localStorage.setItem(DEVICE_KEY, id);
-    }
-    return id;
-  }
+  if (!AudioContext) {
 
-  function urlBase64ToUint8Array(base64String) {
-    const padding = "=".repeat((4 - base64String.length % 4) % 4);
-    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-    const rawData = atob(base64);
-    return Uint8Array.from([...rawData].map(char => char.charCodeAt(0)));
-  }
-
-  async function requestPermission() {
-    if (!("Notification" in window)) return "unsupported";
-    return Notification.requestPermission();
-  }
-
-  async function enablePush() {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
-      throw new Error("WEB PUSH IS NOT SUPPORTED BY THIS BROWSER.");
-    }
-    if (!window.TODO_CONFIG?.vapidPublicKey || window.TODO_CONFIG.vapidPublicKey.startsWith("PASTE-")) {
-      throw new Error("ADD YOUR VAPID PUBLIC KEY TO js/config.js FIRST.");
-    }
-
-    const p = await requestPermission();
-    if (p !== "granted") return { status: p };
-
-    const registration = await navigator.serviceWorker.ready;
-    let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
-      subscription = await registration.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(window.TODO_CONFIG.vapidPublicKey)
-      });
-    }
-
-    await TodoDB.upsertPushSubscription(
-      subscription.toJSON(),
-      deviceId(),
-      Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"
+    console.warn(
+      "Web Audio API is not supported."
     );
 
-    return { status: "subscribed", subscription };
+    return null;
   }
 
-  async function disablePush() {
-    const registration = await navigator.serviceWorker.ready;
-    const subscription = await registration.pushManager.getSubscription();
-    if (!subscription) return false;
-    await TodoDB.removePushSubscription(subscription.endpoint);
-    await subscription.unsubscribe();
-    return true;
+  notificationAudioContext =
+    new AudioContext();
+
+  return notificationAudioContext;
+}
+
+/* =========================================================
+   UNLOCK AUDIO
+   ========================================================= */
+
+async function unlockNotificationAudio() {
+
+  const context =
+    createNotificationAudio();
+
+  if (!context) {
+    return;
   }
 
-  function notify(task, minutesBefore) {
-    const key = `${task.id}:${task.date}:${task.time}:${minutesBefore}`;
-    if (sent.has(key)) return;
-    sent.add(key); saveSent();
+  if (
+    context.state ===
+    "suspended"
+  ) {
 
-    const body = minutesBefore === 0
-      ? `${task.title} is scheduled now.`
-      : `${task.title} starts in ${minutesBefore} minute${minutesBefore === 1 ? "" : "s"}.`;
+    try {
 
-    if (Notification.permission === "granted") {
-      try {
-        const n = new Notification("📌 TODO REMINDER", {body, tag:`todo-${task.id}`});
-        n.onclick = () => { window.focus(); window.dispatchEvent(new CustomEvent("task:open", {detail:{id:task.id}})); n.close(); };
-      } catch {}
+      await context.resume();
+
+    } catch (error) {
+
+      console.warn(
+        "Unable to unlock audio:",
+        error
+      );
+
     }
-    window.dispatchEvent(new CustomEvent("todo:toast", {detail:{title:"TODO REMINDER",body}}));
+  }
+}
+
+/* =========================================================
+   RETRO NOTIFICATION SOUND
+   ========================================================= */
+
+async function playRetroNotificationSound() {
+
+  if (
+    !isNotificationSoundEnabled()
+  ) {
+
+    return;
   }
 
-  function check(tasks) {
-    const now = Date.now();
-    tasks.forEach(t => {
-      if (!t.notification_enabled || t.completed || !t.date || !t.time) return;
-      const dt = new Date(`${t.date}T${t.time}`).getTime();
-      const reminderMs = Number(t.notification_time || 0) * 60000;
-      const diff = dt - now;
-      if (diff >= -30000 && diff <= reminderMs + 30000) notify(t, Number(t.notification_time || 0));
-    });
+  const context =
+    createNotificationAudio();
+
+  if (!context) {
+    return;
   }
 
-  function start(getTasks) {
-    check(getTasks());
-    setInterval(() => check(getTasks()), 15000);
+  if (
+    context.state ===
+    "suspended"
+  ) {
+
+    try {
+
+      await context.resume();
+
+    } catch {
+
+      return;
+
+    }
+
   }
 
-  return {permission,requestPermission,enablePush,disablePush,start,deviceId};
-})();
+  const now =
+    context.currentTime;
+
+  /* =======================================================
+     FIRST BEEP
+     ======================================================= */
+
+  const oscillator1 =
+    context.createOscillator();
+
+  const gain1 =
+    context.createGain();
+
+  oscillator1.type =
+    "square";
+
+  oscillator1.frequency.setValueAtTime(
+    880,
+    now
+  );
+
+  gain1.gain.setValueAtTime(
+    0.0001,
+    now
+  );
+
+  gain1.gain.exponentialRampToValueAtTime(
+    0.08,
+    now + 0.015
+  );
+
+  gain1.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.12
+  );
+
+  oscillator1.connect(
+    gain1
+  );
+
+  gain1.connect(
+    context.destination
+  );
+
+  oscillator1.start(now);
+
+  oscillator1.stop(
+    now + 0.13
+  );
+
+  /* =======================================================
+     SECOND BEEP
+     ======================================================= */
+
+  const oscillator2 =
+    context.createOscillator();
+
+  const gain2 =
+    context.createGain();
+
+  oscillator2.type =
+    "square";
+
+  oscillator2.frequency.setValueAtTime(
+    1174,
+    now + 0.14
+  );
+
+  gain2.gain.setValueAtTime(
+    0.0001,
+    now + 0.14
+  );
+
+  gain2.gain.exponentialRampToValueAtTime(
+    0.08,
+    now + 0.155
+  );
+
+  gain2.gain.exponentialRampToValueAtTime(
+    0.0001,
+    now + 0.30
+  );
+
+  oscillator2.connect(
+    gain2
+  );
+
+  gain2.connect(
+    context.destination
+  );
+
+  oscillator2.start(
+    now + 0.14
+  );
+
+  oscillator2.stop(
+    now + 0.31
+  );
+}
+
+/* =========================================================
+   UNLOCK AUDIO AFTER USER INTERACTION
+   ========================================================= */
+
+document.addEventListener(
+  "pointerdown",
+  () => {
+
+    unlockNotificationAudio();
+
+  },
+  {
+    once: true
+  }
+);
+
+/* =========================================================
+   SERVICE WORKER MESSAGE
+   ========================================================= */
+
+if (
+  "serviceWorker" in navigator
+) {
+
+  navigator.serviceWorker
+    .addEventListener(
+      "message",
+      (event) => {
+
+        if (
+          event.data?.type ===
+          "TODO_PUSH_RECEIVED"
+        ) {
+
+          console.log(
+            "[NOTIFICATION] Reminder received:",
+            event.data.payload
+          );
+
+          playRetroNotificationSound();
+
+        }
+
+      }
+    );
+
+}
+
+/* =========================================================
+   SOUND SETTINGS
+   ========================================================= */
+
+document.addEventListener(
+  "DOMContentLoaded",
+  () => {
+
+    const toggle =
+      document.getElementById(
+        "notificationSoundToggle"
+      );
+
+    const testButton =
+      document.getElementById(
+        "testNotificationSound"
+      );
+
+    /* -------------------------------------------------------
+       INITIAL VALUE
+       ------------------------------------------------------- */
+
+    if (toggle) {
+
+      toggle.checked =
+        isNotificationSoundEnabled();
+
+    }
+
+    /* -------------------------------------------------------
+       TOGGLE
+       ------------------------------------------------------- */
+
+    if (toggle) {
+
+      toggle.addEventListener(
+        "change",
+        async () => {
+
+          const enabled =
+            toggle.checked;
+
+          setNotificationSoundEnabled(
+            enabled
+          );
+
+          if (enabled) {
+
+            await unlockNotificationAudio();
+
+            await playRetroNotificationSound();
+
+          }
+
+        }
+      );
+
+    }
+
+    /* -------------------------------------------------------
+       TEST BUTTON
+       ------------------------------------------------------- */
+
+    if (testButton) {
+
+      testButton.addEventListener(
+        "click",
+        async () => {
+
+          await unlockNotificationAudio();
+
+          await playRetroNotificationSound();
+
+        }
+      );
+
+    }
+
+  }
+);
