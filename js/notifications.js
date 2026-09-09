@@ -664,6 +664,19 @@ document.addEventListener(
               toggle.checked
             );
 
+            /* Keep the app.js state mirror in sync. */
+
+            window.dispatchEvent(
+              new CustomEvent(
+                "todo:sound-changed",
+                {
+                  detail: {
+                    enabled: toggle.checked
+                  }
+                }
+              )
+            );
+
             if (
               toggle.checked
             ) {
@@ -699,53 +712,11 @@ document.addEventListener(
       }
     );
 
-    const pushButton =
-      document.getElementById(
-        "settingsNotifyBtn"
-      );
-
-    if (pushButton) {
-      pushButton.addEventListener(
-        "click",
-        async () => {
-          try {
-            const result =
-              await enablePush();
-
-            if (
-              result.status ===
-              "denied"
-            ) {
-              updatePushButtons(
-                "blocked"
-              );
-            }
-
-          } catch (error) {
-            console.error(
-              "[PUSH] Setup failed:",
-              error
-            );
-
-            window.dispatchEvent(
-              new CustomEvent(
-                "todo:toast",
-                {
-                  detail: {
-                    title:
-                      "PUSH SETUP ERROR",
-
-                    body:
-                      error.message ||
-                      "Unable to enable push notifications."
-                  }
-                }
-              )
-            );
-          }
-        }
-      );
-    }
+    /* NOTE: the push enable buttons are wired once in
+       app.js (setupNotifications). Wiring them here too
+       fired requestPermission/subscribe twice per tap,
+       which fails on mobile browsers and makes the
+       buttons look dead. */
 
     if (
       isPushSupported()

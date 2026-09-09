@@ -1,49 +1,87 @@
-/* =========================================================
-   TODO MACHINE
-   MAIN APPLICATION
-   ========================================================= */
 
 (() => {
   "use strict";
 
-  const $ = selector => document.querySelector(selector);
-  const $$ = selector => [...document.querySelectorAll(selector)];
+  /* =========================================================
+     TODO MACHINE — APP CONTROLLER
+     Connected to the supplied HTML structure.
+     ========================================================= */
+
+  const $ = (selector) =>
+    document.querySelector(selector);
+
+  const $$ = (selector) =>
+    [...document.querySelectorAll(selector)];
+
+  /* =========================================================
+     STATE
+     ========================================================= */
 
   const state = {
     view: "dashboard",
     listView: "today",
     calendarDate: new Date(),
-    editingId: null
+    editingId: null,
+    deferredInstallPrompt: null,
+    soundEnabled: true
   };
 
+  /* =========================================================
+     DOM REFERENCES
+     ========================================================= */
+
   const els = {
+    /* Boot */
     boot: $("#bootScreen"),
     bootText: $("#bootText"),
     bootProgress: $("#bootProgress"),
+    skipBoot: $("#skipBoot"),
 
+    /* Header */
     topClock: $("#topClock"),
     topDate: $("#topDate"),
-    largeClock: $("#largeClock"),
-    largeDate: $("#largeDate"),
-
     connectionDot: $("#connectionDot"),
     connectionText: $("#connectionText"),
+
+    /* System status */
     dbStatus: $("#dbStatus"),
     taskCountStatus: $("#taskCountStatus"),
     nextReminderStatus: $("#nextReminderStatus"),
+    appModeStatus: $("#appModeStatus"),
     footerStatus: $("#footerStatus"),
 
+    /* Dashboard */
     taskList: $("#taskList"),
     todayWidgetList: $("#todayWidgetList"),
     todayCount: $("#todayCount"),
     nextTaskContent: $("#nextTaskContent"),
     progressContent: $("#progressContent"),
 
+    /* Dashboard search */
+    taskSearch: $("#taskSearch"),
+    quickFilter: $("#quickFilter"),
+
+    /* Main list */
+    listTaskList: $("#listTaskList"),
+    listSearch: $("#listSearch"),
+    categoryFilter: $("#categoryFilter"),
+    categoryOptions: $("#categoryOptions"),
+
+    /* Calendar */
+    calendarGrid: $("#calendarGrid"),
+    calendarTitle: $("#calendarTitle"),
+    prevMonth: $("#prevMonth"),
+    nextMonth: $("#nextMonth"),
+
+    /* Task dialog */
     dialog: $("#taskDialog"),
     form: $("#taskForm"),
     dialogTitle: $("#dialogTitle"),
+    closeDialog: $("#closeDialog"),
+    cancelDialog: $("#cancelDialog"),
     formError: $("#formError"),
 
+    /* Task fields */
     taskId: $("#taskId"),
     taskTitle: $("#taskTitle"),
     taskDescription: $("#taskDescription"),
@@ -54,31 +92,51 @@
     notificationEnabled: $("#notificationEnabled"),
     notificationTime: $("#notificationTime"),
 
-    listTaskList: $("#listTaskList"),
-    listSearch: $("#listSearch"),
-    taskSearch: $("#taskSearch"),
-    quickFilter: $("#quickFilter"),
-    categoryFilter: $("#categoryFilter"),
-    categoryOptions: $("#categoryOptions"),
+    /* Notifications */
+    notifyButton: $("#notifyButton"),
+    settingsNotifyBtn: $("#settingsNotifyBtn"),
 
-    calendarGrid: $("#calendarGrid"),
-    calendarTitle: $("#calendarTitle")
+    /* PWA */
+    installAppBtn: $("#installAppBtn"),
+    settingsInstallBtn: $("#settingsInstallBtn"),
+
+    /* Settings */
+    settingsAppMode: $("#settingsAppMode"),
+    settingsSwStatus: $("#settingsSwStatus"),
+    settingsSoundToggle: $("#settingsSoundToggle"),
+    settingsTestSound: $("#settingsTestSound"),
+
+    /* Sound dialog */
+    soundDialog: $("#soundDialog"),
+    closeSoundDialog: $("#closeSoundDialog"),
+    closeSoundSettings: $("#closeSoundSettings"),
+    notificationSoundToggle: $("#notificationSoundToggle"),
+    testNotificationSound: $("#testNotificationSound"),
+
+    /* Toast / offline */
+    toastRegion: $("#toastRegion"),
+    offlineBanner: $("#offlineBanner"),
+
+    /* Buttons */
+    newTaskButton: $("#newTaskButton"),
+    newTaskButtonSide: $("#newTaskButtonSide"),
+    newTaskButtonList: $("#newTaskButtonList")
   };
 
-  /* =======================================================
+  /* =========================================================
      HELPERS
-     ======================================================= */
+     ========================================================= */
 
   function escapeHTML(value = "") {
     return String(value).replace(
       /[&<>"']/g,
-      character => ({
+      (char) => ({
         "&": "&amp;",
         "<": "&lt;",
         ">": "&gt;",
         '"': "&quot;",
         "'": "&#039;"
-      })[character]
+      })[char]
     );
   }
 
@@ -86,13 +144,20 @@
     if (!time) return "NO TIME";
 
     const [hours, minutes] =
-      time.split(":").map(Number);
+      String(time).split(":").map(Number);
+
+    if (
+      Number.isNaN(hours) ||
+      Number.isNaN(minutes)
+    ) {
+      return "NO TIME";
+    }
 
     const date = new Date();
 
     date.setHours(
-      hours || 0,
-      minutes || 0,
+      hours,
+      minutes,
       0,
       0
     );
@@ -145,49 +210,40 @@
   function countdown(dateTime) {
     if (!dateTime) return "NO DATE";
 
-    let milliseconds =
+    let ms =
       new Date(dateTime).getTime() -
       Date.now();
 
-    if (milliseconds <= 0) {
+    if (Number.isNaN(ms)) {
+      return "NO DATE";
+    }
+
+    if (ms <= 0) {
       return "PAST DUE";
     }
 
     const days =
-      Math.floor(
-        milliseconds / 86400000
-      );
+      Math.floor(ms / 86400000);
 
-    milliseconds %= 86400000;
+    ms %= 86400000;
 
     const hours =
-      Math.floor(
-        milliseconds / 3600000
-      );
+      Math.floor(ms / 3600000);
 
-    milliseconds %= 3600000;
+    ms %= 3600000;
 
     const minutes =
-      Math.floor(
-        milliseconds / 60000
-      );
+      Math.floor(ms / 60000);
 
     return (
-      `${days ? `${days}D ` : ""}` +
+      `${days ? days + "D " : ""}` +
       `${String(hours).padStart(2, "0")}H ` +
       `${String(minutes).padStart(2, "0")}M`
     );
   }
 
-  /* =======================================================
-     TOAST
-     ======================================================= */
-
   function toast(title, body) {
-    const region =
-      $("#toastRegion");
-
-    if (!region) return;
+    if (!els.toastRegion) return;
 
     const node =
       document.createElement("div");
@@ -195,44 +251,37 @@
     node.className = "toast";
 
     node.innerHTML = `
-      <strong>${escapeHTML(title)}</strong>
-      <div>${escapeHTML(body)}</div>
+      <strong>
+        ${escapeHTML(title)}
+      </strong>
+
+      <div>
+        ${escapeHTML(body)}
+      </div>
     `;
 
-    region.appendChild(node);
+    els.toastRegion.appendChild(node);
 
-    setTimeout(
-      () => node.remove(),
-      5000
-    );
+    setTimeout(() => {
+      node.remove();
+    }, 5000);
   }
 
-  window.addEventListener(
-    "todo:toast",
-    event => {
-      const detail =
-        event.detail || {};
+  /* =========================================================
+     CONNECTION STATUS
+     ========================================================= */
 
-      toast(
-        detail.title || "TODO MACHINE",
-        detail.body || ""
+  function setConnection(connected) {
+    if (els.connectionDot) {
+      els.connectionDot.classList.toggle(
+        "offline",
+        !connected
       );
     }
-  );
-
-  /* =======================================================
-     CONNECTION
-     ======================================================= */
-
-  function setConnection(online) {
-    els.connectionDot?.classList.toggle(
-      "offline",
-      !online
-    );
 
     if (els.connectionText) {
       els.connectionText.textContent =
-        online
+        connected
           ? "DATABASE ONLINE"
           : "OFFLINE / DISCONNECTED";
     }
@@ -240,7 +289,7 @@
     if (els.dbStatus) {
       els.dbStatus.textContent =
         `DATABASE: ${
-          online
+          connected
             ? "CONNECTED"
             : "OFFLINE"
         }`;
@@ -248,55 +297,66 @@
 
     if (els.footerStatus) {
       els.footerStatus.textContent =
-        online
+        connected
           ? "TASK DATABASE CONNECTED"
           : "OFFLINE — SYNC PENDING";
     }
 
-    $("#offlineBanner")
-      ?.classList.toggle(
+    if (els.offlineBanner) {
+      els.offlineBanner.classList.toggle(
         "hidden",
-        online
+        connected
       );
+    }
   }
 
-  /* =======================================================
-     DATABASE REFRESH
-     ======================================================= */
+  /* =========================================================
+     DATABASE
+     ========================================================= */
 
   async function refresh() {
     try {
+      if (
+        !window.TodoDB ||
+        typeof TodoDB.listTasks !==
+          "function"
+      ) {
+        throw new Error(
+          "Database module is not loaded."
+        );
+      }
+
       const tasks =
         await TodoDB.listTasks();
 
-      TaskStore.setTasks(
-        Array.isArray(tasks)
-          ? tasks
-          : []
-      );
+      if (
+        window.TaskStore &&
+        typeof TaskStore.setTasks ===
+          "function"
+      ) {
+        TaskStore.setTasks(tasks);
+      }
 
       setConnection(true);
 
-      renderAll(
-        TaskStore.all()
-      );
-
+      return tasks;
     } catch (error) {
+      setConnection(false);
+
       console.error(
-        "[APP] Database refresh failed:",
+        "TODO MACHINE DATABASE ERROR:",
         error
       );
 
-      setConnection(false);
-
       if (
-        typeof TodoDB?.configured ===
+        window.TodoDB &&
+        typeof TodoDB.configured ===
           "function" &&
         !TodoDB.configured()
       ) {
         toast(
           "CONFIG REQUIRED",
-          "Check js/config.js for your Supabase settings."
+          "Check js/config.js and your Supabase configuration."
         );
       } else {
         toast(
@@ -306,58 +366,39 @@
         );
       }
 
-      renderAll(
-        TaskStore.all()
-      );
+      return [];
     }
   }
 
-  /* =======================================================
-     TASK ACTIONS
-     ======================================================= */
-
-  async function saveTask(payload, id) {
-    try {
-      if (id) {
-        await TodoDB.updateTask(
-          id,
-          payload
-        );
-      } else {
-        await TodoDB.createTask(
-          payload
-        );
-      }
-
-      await refresh();
-
-      toast(
-        "SYSTEM READY",
-        id
-          ? "TASK UPDATED"
-          : "TASK SAVED TO DATABASE"
-      );
-
-      closeDialog();
-
-    } catch (error) {
-      console.error(
-        "[APP] Save failed:",
-        error
-      );
-
-      if (els.formError) {
-        els.formError.textContent =
-          error.message ||
-          "Unable to save task.";
-      }
-
-      toast(
-        "SAVE ERROR",
-        error.message ||
-          "Unable to save task."
+  async function saveTask(
+    payload,
+    id = null
+  ) {
+    if (!window.TodoDB) {
+      throw new Error(
+        "Database module is not loaded."
       );
     }
+
+    if (id) {
+      await TodoDB.updateTask(
+        id,
+        payload
+      );
+    } else {
+      await TodoDB.createTask(
+        payload
+      );
+    }
+
+    await refresh();
+
+    toast(
+      "SYSTEM READY",
+      id
+        ? "TASK UPDATED"
+        : "TASK SAVED TO DATABASE"
+    );
   }
 
   async function deleteTask(id) {
@@ -378,10 +419,11 @@
 
       toast(
         "TASK REMOVED",
-        "Database record deleted."
+        "DATABASE RECORD DELETED."
       );
-
     } catch (error) {
+      console.error(error);
+
       toast(
         "DELETE ERROR",
         error.message ||
@@ -391,6 +433,8 @@
   }
 
   async function toggleTask(id) {
+    if (!window.TaskStore) return;
+
     const task =
       TaskStore.byId(id);
 
@@ -409,8 +453,9 @@
       );
 
       await refresh();
-
     } catch (error) {
+      console.error(error);
+
       toast(
         "UPDATE ERROR",
         error.message ||
@@ -419,39 +464,204 @@
     }
   }
 
-  /* =======================================================
-     RENDER ALL
-     ======================================================= */
+  /* =========================================================
+     TASK RENDERING
+     ========================================================= */
 
-  function renderAll(tasks) {
-    renderDashboard(tasks);
-    renderCurrentList();
-    renderCalendar();
-    renderCategories();
-
-    if (els.taskCountStatus) {
-      els.taskCountStatus.textContent =
-        `TASKS: ${tasks.length}`;
+  function taskRows(tasks = []) {
+    if (!tasks.length) {
+      return `
+        <div class="empty-state">
+          NO TASKS FOUND.
+          <br>
+          CREATE A NEW TASK TO BEGIN.
+        </div>
+      `;
     }
 
-    const next =
-      TaskStore.next();
+    return tasks
+      .map((task) => {
+        const overdue =
+          typeof TaskStore?.isOverdue ===
+            "function"
+            ? TaskStore.isOverdue(task)
+            : false;
 
-    if (els.nextReminderStatus) {
-      els.nextReminderStatus.textContent =
-        `NEXT REMINDER: ${
-          next
-            ? formatTime(next.time)
-            : "NONE"
-        }`;
-    }
+        const priority =
+          task.priority || "medium";
+
+        const priorityMark =
+          priority === "high"
+            ? "!!!"
+            : priority === "medium"
+            ? "!!"
+            : "!";
+
+        return `
+          <article
+            class="task-row"
+            data-id="${escapeHTML(task.id)}"
+          >
+
+            <input
+              class="task-check"
+              type="checkbox"
+              ${task.completed ? "checked" : ""}
+              aria-label="Complete ${escapeHTML(
+                task.title
+              )}"
+            >
+
+            <div class="task-main">
+
+              <div
+                class="task-title ${
+                  task.completed
+                    ? "completed"
+                    : ""
+                }"
+              >
+                ${escapeHTML(
+                  task.title
+                )}
+              </div>
+
+              <div class="task-meta">
+
+                ${escapeHTML(
+                  task.category ||
+                    "GENERAL"
+                )}
+
+                ·
+
+                ${dateLabel(
+                  task.date
+                )}
+
+                ${
+                  task.notification_enabled
+                    ? " · 🔔 REMINDER"
+                    : ""
+                }
+
+                ${
+                  overdue
+                    ? " · OVERDUE"
+                    : ""
+                }
+
+              </div>
+
+            </div>
+
+            <div
+              class="priority ${escapeHTML(
+                priority
+              )}"
+            >
+              ${priorityMark}
+            </div>
+
+            <div class="task-time">
+              ${formatTime(
+                task.time
+              )}
+            </div>
+
+            <div class="task-actions">
+
+              <button
+                class="icon-button edit-task"
+                title="Edit task"
+                type="button"
+              >
+                EDIT
+              </button>
+
+              <button
+                class="icon-button delete-task"
+                title="Delete task"
+                type="button"
+              >
+                DEL
+              </button>
+
+            </div>
+
+          </article>
+        `;
+      })
+      .join("");
   }
 
-  /* =======================================================
+  function bindTaskList(container) {
+    if (!container) return;
+
+    container.addEventListener(
+      "click",
+      (event) => {
+        const row =
+          event.target.closest(
+            ".task-row"
+          );
+
+        if (!row) return;
+
+        const id =
+          row.dataset.id;
+
+        if (
+          event.target.closest(
+            ".edit-task"
+          )
+        ) {
+          openDialog(
+            TaskStore.byId(id)
+          );
+
+          return;
+        }
+
+        if (
+          event.target.closest(
+            ".delete-task"
+          )
+        ) {
+          deleteTask(id);
+        }
+      }
+    );
+
+    container.addEventListener(
+      "change",
+      (event) => {
+        const row =
+          event.target.closest(
+            ".task-row"
+          );
+
+        if (
+          row &&
+          event.target.classList.contains(
+            "task-check"
+          )
+        ) {
+          toggleTask(
+            row.dataset.id
+          );
+        }
+      }
+    );
+  }
+
+  /* =========================================================
      DASHBOARD
-     ======================================================= */
+     ========================================================= */
 
   function renderDashboard(tasks) {
+    if (!window.TaskStore) return;
+
     const today =
       tasks.filter(
         TaskStore.isToday
@@ -461,7 +671,7 @@
       TaskStore.filter({
         view:
           els.quickFilter?.value ||
-          "all",
+          "today",
 
         search:
           els.taskSearch?.value ||
@@ -482,56 +692,67 @@
         taskRows(visible);
     }
 
+    /* Today widget */
+
     if (els.todayWidgetList) {
-      els.todayWidgetList.innerHTML =
-        today.length
-          ? today
-              .slice(0, 5)
-              .map(
-                task => `
-                  <div class="mini-task">
-                    <span>
-                      ${task.completed
-                        ? "■"
-                        : "□"}
-                    </span>
+      if (!today.length) {
+        els.todayWidgetList.innerHTML = `
+          <div class="empty-state">
+            NO TASKS FOR TODAY.
+          </div>
+        `;
+      } else {
+        els.todayWidgetList.innerHTML =
+          today
+            .slice(0, 5)
+            .map(
+              (task) => `
+                <div class="mini-task">
 
-                    <span class="${
+                  <span>
+                    ${
                       task.completed
-                        ? "done"
-                        : ""
-                    }">
-                      ${escapeHTML(
-                        task.title
-                      )}
-                    </span>
+                        ? "■"
+                        : "□"
+                    }
+                  </span>
 
-                    <span>
-                      ${formatTime(
-                        task.time
-                      )}
-                    </span>
-                  </div>
-                `
-              )
-              .join("")
-          : `
-              <div class="empty-state">
-                NO TASKS FOR TODAY.
-              </div>
-            `;
+                  <span class="${
+                    task.completed
+                      ? "done"
+                      : ""
+                  }">
+                    ${escapeHTML(
+                      task.title
+                    )}
+                  </span>
+
+                  <span>
+                    ${formatTime(
+                      task.time
+                    )}
+                  </span>
+
+                </div>
+              `
+            )
+            .join("");
+      }
     }
+
+    /* Progress */
 
     const completed =
       today.filter(
-        task => task.completed
+        (task) =>
+          task.completed
       ).length;
 
-    const percent =
+    const percentage =
       today.length
         ? Math.round(
-            completed /
-              today.length *
+            (completed /
+              today.length) *
               100
           )
         : 0;
@@ -539,253 +760,91 @@
     if (els.progressContent) {
       els.progressContent.innerHTML = `
         <div class="progress-wrap">
+
           <div class="progress-bar">
+
             <div
               class="progress-fill"
-              style="width:${percent}%"
+              style="width:${percentage}%"
             ></div>
+
           </div>
 
           <div class="progress-text">
-            ${completed} / ${today.length}
-            COMPLETE — ${percent}%
+            ${completed}
+            /
+            ${today.length}
+            COMPLETE —
+            ${percentage}%
           </div>
+
         </div>
       `;
     }
+
+    /* Next task */
 
     const next =
       TaskStore.next();
 
     if (els.nextTaskContent) {
-      els.nextTaskContent.innerHTML =
-        next
-          ? `
-            <div class="widget-content">
-              <div class="next-task-title">
-                ${escapeHTML(
-                  next.title
-                )}
-              </div>
+      if (!next) {
+        els.nextTaskContent.innerHTML = `
+          <div class="widget-content empty-state">
+            NO UPCOMING TASKS.
+          </div>
+        `;
+      } else {
+        const taskDateTime =
+          TaskStore.taskDateTime(
+            next
+          );
 
-              <div class="next-task-time">
-                ${dateLabel(next.date)}
-                ·
-                ${formatTime(next.time)}
-              </div>
+        els.nextTaskContent.innerHTML = `
+          <div class="widget-content">
 
-              <div class="countdown">
-                STARTS IN
-                ${countdown(
-                  TaskStore.taskDateTime(
-                    next
-                  )
-                )}
-              </div>
-            </div>
-          `
-          : `
-            <div class="widget-content empty-state">
-              NO UPCOMING TASKS.
-            </div>
-          `;
-    }
-  }
-
-  /* =======================================================
-     TASK ROWS
-     ======================================================= */
-
-  function taskRows(tasks) {
-    if (!tasks.length) {
-      return `
-        <div class="empty-state">
-          NO TASKS FOUND.
-          <br>
-          CREATE A NEW TASK TO BEGIN.
-        </div>
-      `;
-    }
-
-    return tasks
-      .map(task => {
-        const overdue =
-          TaskStore.isOverdue(task);
-
-        const priority =
-          ["low", "medium", "high"]
-            .includes(task.priority)
-            ? task.priority
-            : "medium";
-
-        return `
-          <article
-            class="task-row"
-            data-id="${escapeHTML(
-              task.id
-            )}"
-          >
-
-            <input
-              class="task-check"
-              type="checkbox"
-              ${
-                task.completed
-                  ? "checked"
-                  : ""
-              }
-              aria-label="Complete ${escapeHTML(
-                task.title
-              )}"
-            >
-
-            <div class="task-main">
-              <div class="task-title ${
-                task.completed
-                  ? "completed"
-                  : ""
-              }">
-                ${escapeHTML(
-                  task.title
-                )}
-              </div>
-
-              <div class="task-meta">
-                ${escapeHTML(
-                  task.category ||
-                    "GENERAL"
-                )}
-                ·
-                ${dateLabel(task.date)}
-
-                ${
-                  task.notification_enabled
-                    ? " · 🔔 REMINDER"
-                    : ""
-                }
-
-                ${
-                  overdue
-                    ? " · OVERDUE"
-                    : ""
-                }
-              </div>
-            </div>
-
-            <div
-              class="priority ${priority}"
-              aria-label="${priority} priority"
-            >
-              ${
-                priority === "high"
-                  ? "!!!"
-                  : priority === "medium"
-                    ? "!!"
-                    : "!"
-              }
-            </div>
-
-            <div class="task-time">
-              ${formatTime(
-                task.time
+            <div class="next-task-title">
+              ${escapeHTML(
+                next.title
               )}
             </div>
 
-            <div class="task-actions">
-              <button
-                class="icon-button edit-task"
-                type="button"
-                title="Edit task"
-              >
-                EDIT
-              </button>
-
-              <button
-                class="icon-button delete-task"
-                type="button"
-                title="Delete task"
-              >
-                DEL
-              </button>
+            <div class="next-task-time">
+              ${dateLabel(
+                next.date
+              )}
+              ·
+              ${formatTime(
+                next.time
+              )}
             </div>
 
-          </article>
+            <div class="countdown">
+              STARTS IN
+              ${countdown(
+                taskDateTime
+              )}
+            </div>
+
+          </div>
         `;
-      })
-      .join("");
+      }
+    }
   }
 
-  /* =======================================================
-     TASK LIST EVENTS
-     ======================================================= */
-
-  function bindTaskList(container) {
-    if (!container) return;
-
-    container.addEventListener(
-      "click",
-      event => {
-        const row =
-          event.target.closest(
-            ".task-row"
-          );
-
-        if (!row) return;
-
-        const id =
-          row.dataset.id;
-
-        if (
-          event.target.closest(
-            ".edit-task"
-          )
-        ) {
-          openDialog(
-            TaskStore.byId(id)
-          );
-        }
-
-        if (
-          event.target.closest(
-            ".delete-task"
-          )
-        ) {
-          deleteTask(id);
-        }
-      }
-    );
-
-    container.addEventListener(
-      "change",
-      event => {
-        const row =
-          event.target.closest(
-            ".task-row"
-          );
-
-        if (
-          row &&
-          event.target.classList.contains(
-            "task-check"
-          )
-        ) {
-          toggleTask(
-            row.dataset.id
-          );
-        }
-      }
-    );
-  }
-
-  /* =======================================================
+  /* =========================================================
      LIST VIEW
-     ======================================================= */
+     ========================================================= */
 
   function renderCurrentList() {
-    const view =
-      state.listView;
+    if (
+      !window.TaskStore ||
+      !els.listTaskList
+    ) {
+      return;
+    }
 
-    const labels = {
+    const map = {
       today: [
         "03 / TASKS",
         "TODAY"
@@ -817,30 +876,31 @@
       ]
     };
 
-    const label =
-      labels[view] || [
-        "03 / TASKS",
-        "TASKS"
-      ];
+    const eyebrow =
+      $("#listEyebrow");
 
-    $("#listEyebrow")
-      && ($("#listEyebrow").textContent =
-        label[0]);
+    const title =
+      $("#listTitle");
 
-    $("#listTitle")
-      && ($("#listTitle").textContent =
-        label[1]);
+    if (eyebrow) {
+      eyebrow.textContent =
+        map[state.listView]?.[0] ||
+        "03 / TASKS";
+    }
 
-    if (!els.listTaskList) {
-      return;
+    if (title) {
+      title.textContent =
+        map[state.listView]?.[1] ||
+        "TASKS";
     }
 
     const list =
       TaskStore.filter({
         view:
-          view === "categories"
+          state.listView ===
+          "categories"
             ? "all"
-            : view,
+            : state.listView,
 
         search:
           els.listSearch?.value ||
@@ -855,15 +915,24 @@
       taskRows(list);
   }
 
-  /* =======================================================
+  /* =========================================================
      CATEGORIES
-     ======================================================= */
+     ========================================================= */
 
   function renderCategories() {
+    if (
+      !window.TaskStore
+    ) {
+      return;
+    }
+
     const categories =
       TaskStore.categories();
 
     if (els.categoryFilter) {
+      const current =
+        els.categoryFilter.value;
+
       els.categoryFilter.innerHTML =
         `
           <option value="">
@@ -872,43 +941,55 @@
         ` +
         categories
           .map(
-            category =>
-              `
-                <option value="${escapeHTML(
+            (category) => `
+              <option
+                value="${escapeHTML(
                   category
-                )}">
-                  ${escapeHTML(
-                    category
-                  )}
-                </option>
-              `
+                )}"
+              >
+                ${escapeHTML(
+                  category
+                )}
+              </option>
+            `
           )
           .join("");
+
+      if (
+        categories.includes(
+          current
+        )
+      ) {
+        els.categoryFilter.value =
+          current;
+      }
     }
 
     if (els.categoryOptions) {
       els.categoryOptions.innerHTML =
         categories
           .map(
-            category =>
-              `
-                <option
-                  value="${escapeHTML(
-                    category
-                  )}"
-                ></option>
-              `
+            (category) => `
+              <option
+                value="${escapeHTML(
+                  category
+                )}"
+              ></option>
+            `
           )
           .join("");
     }
   }
 
-  /* =======================================================
+  /* =========================================================
      CALENDAR
-     ======================================================= */
+     ========================================================= */
 
   function renderCalendar() {
-    if (!els.calendarGrid) {
+    if (
+      !els.calendarGrid ||
+      !window.TaskStore
+    ) {
       return;
     }
 
@@ -923,25 +1004,23 @@
 
     if (els.calendarTitle) {
       els.calendarTitle.textContent =
-        date
-          .toLocaleDateString(
-            undefined,
-            {
-              month: "long",
-              year: "numeric"
-            }
-          )
-          .toUpperCase();
+        date.toLocaleDateString(
+          undefined,
+          {
+            month: "long",
+            year: "numeric"
+          }
+        ).toUpperCase();
     }
 
-    const first =
+    const firstDay =
       new Date(
         year,
         month,
         1
       );
 
-    const last =
+    const lastDay =
       new Date(
         year,
         month + 1,
@@ -949,12 +1028,14 @@
       );
 
     const start =
-      first.getDay();
+      firstDay.getDay();
+
+    const totalDays =
+      lastDay.getDate();
 
     const totalCells =
       Math.ceil(
-        (start +
-          last.getDate()) /
+        (start + totalDays) /
           7
       ) * 7;
 
@@ -969,9 +1050,7 @@
       index++
     ) {
       const day =
-        index -
-        start +
-        1;
+        index - start + 1;
 
       const cellDate =
         new Date(
@@ -991,21 +1070,20 @@
 
       const dayTasks =
         tasks.filter(
-          task =>
+          (task) =>
             task.date === key
         );
+
+      const isToday =
+        key ===
+        TaskStore.dateKey();
 
       html += `
         <div
           class="
             calendar-cell
             ${inMonth ? "" : "other"}
-            ${
-              key ===
-              TaskStore.dateKey()
-                ? "today"
-                : ""
-            }
+            ${isToday ? "today" : ""}
           "
         >
 
@@ -1016,11 +1094,14 @@
           ${dayTasks
             .slice(0, 3)
             .map(
-              task => `
+              (task) => `
                 <div
                   class="
                     calendar-task
-                    ${task.priority}
+                    ${escapeHTML(
+                      task.priority ||
+                        "medium"
+                    )}
                   "
                 >
                   ${
@@ -1042,7 +1123,8 @@
               ? `
                 <div class="calendar-more">
                   +${
-                    dayTasks.length - 3
+                    dayTasks.length -
+                    3
                   } MORE
                 </div>
               `
@@ -1057,9 +1139,45 @@
       html;
   }
 
-  /* =======================================================
-     DIALOG
-     ======================================================= */
+  /* =========================================================
+     RENDER EVERYTHING
+     ========================================================= */
+
+  function renderAll(tasks = []) {
+    renderDashboard(tasks);
+    renderCurrentList();
+    renderCalendar();
+    renderCategories();
+
+    if (els.taskCountStatus) {
+      els.taskCountStatus.textContent =
+        `TASKS: ${tasks.length}`;
+    }
+
+    if (
+      window.TaskStore &&
+      typeof TaskStore.next ===
+        "function"
+    ) {
+      const next =
+        TaskStore.next();
+
+      if (els.nextReminderStatus) {
+        els.nextReminderStatus.textContent =
+          `NEXT REMINDER: ${
+            next
+              ? formatTime(
+                  next.time
+                )
+              : "NONE"
+          }`;
+      }
+    }
+  }
+
+  /* =========================================================
+     TASK DIALOG
+     ========================================================= */
 
   function openDialog(task = null) {
     if (
@@ -1104,7 +1222,15 @@
     if (els.taskDate) {
       els.taskDate.value =
         task?.date ||
-        TaskStore.dateKey();
+        (
+          window.TaskStore &&
+          typeof TaskStore.dateKey ===
+            "function"
+            ? TaskStore.dateKey()
+            : new Date()
+                .toISOString()
+                .slice(0, 10)
+        );
     }
 
     if (els.taskTime) {
@@ -1137,18 +1263,21 @@
         );
     }
 
-    try {
-      if (!els.dialog.open) {
-        els.dialog.showModal();
-      }
-    } catch {
+    if (
+      typeof els.dialog.showModal ===
+      "function"
+    ) {
+      els.dialog.showModal();
+    } else {
       els.dialog.setAttribute(
         "open",
         ""
       );
     }
 
-    els.taskTitle?.focus();
+    setTimeout(() => {
+      els.taskTitle?.focus();
+    }, 50);
   }
 
   function closeDialog() {
@@ -1168,96 +1297,169 @@
     state.editingId = null;
   }
 
-  /* =======================================================
-     FORM SUBMIT
-     ======================================================= */
+  async function handleSubmit(event) {
+    event.preventDefault();
 
-  function getFormPayload() {
-    const title =
-      els.taskTitle?.value
-        .trim() || "";
-
-    if (!title) {
-      throw new Error(
-        "TASK TITLE IS REQUIRED."
-      );
+    if (els.formError) {
+      els.formError.textContent =
+        "";
     }
+
+    const title =
+      els.taskTitle?.value.trim() ||
+      "";
 
     const date =
-      els.taskDate?.value || "";
+      els.taskDate?.value ||
+      "";
 
-    if (!date) {
-      throw new Error(
-        "TASK DATE IS REQUIRED."
-      );
+    if (!title || !date) {
+      if (els.formError) {
+        els.formError.textContent =
+          "TASK TITLE AND DATE ARE REQUIRED.";
+      }
+
+      return;
     }
 
-    return {
+    const time =
+      els.taskTime?.value ||
+      null;
+
+    const notificationMinutes =
+      Number(
+        els.notificationTime?.value ||
+          10
+      );
+
+    let notificationAt = null;
+
+    if (
+      els.notificationEnabled?.checked &&
+      time
+    ) {
+      const taskDate =
+        new Date(
+          `${date}T${time}:00`
+        );
+
+      notificationAt =
+        new Date(
+          taskDate.getTime() -
+            notificationMinutes *
+              60000
+        ).toISOString();
+    }
+
+    const existing =
+      state.editingId &&
+      window.TaskStore
+        ? TaskStore.byId(
+            state.editingId
+          )
+        : null;
+
+    const payload = {
       title,
 
       description:
-        els.taskDescription?.value
-          .trim() || "",
+        els.taskDescription?.value.trim() ||
+        "",
 
       date,
 
-      time:
-        els.taskTime?.value || null,
+      time,
 
       priority:
         els.taskPriority?.value ||
         "medium",
 
       category:
-        els.taskCategory?.value
-          .trim() ||
-        "GENERAL",
+        els.taskCategory?.value.trim() ||
+        "General",
+
+      completed:
+        existing?.completed ||
+        false,
 
       notification_enabled:
-        Boolean(
-          els.notificationEnabled
-            ?.checked
-        ),
+        els.notificationEnabled?.checked ??
+        true,
 
       notification_time:
-        Number(
-          els.notificationTime
-            ?.value || 10
-        ),
+        notificationMinutes,
+
+      notification_at:
+        notificationAt,
 
       updated_at:
         new Date().toISOString()
     };
-  }
 
-  /* =======================================================
-     VIEW SWITCHING
-     ======================================================= */
+    if (existing?.created_at) {
+      payload.created_at =
+        existing.created_at;
+    }
 
-  function switchView(view) {
-    state.view = view;
-
-    $$(".view").forEach(
-      element =>
-        element.classList.remove(
-          "active"
-        )
-    );
-
-    $$(".nav-item").forEach(
-      element =>
-        element.classList.remove(
-          "active"
-        )
-    );
-
-    const nav =
-      document.querySelector(
-        `.nav-item[data-view="${view}"]`
+    try {
+      await saveTask(
+        payload,
+        state.editingId
       );
 
-    nav?.classList.add(
-      "active"
+      closeDialog();
+    } catch (error) {
+      console.error(error);
+
+      if (els.formError) {
+        els.formError.textContent =
+          error.message ||
+          "Unable to save task.";
+      }
+    }
+  }
+
+  /* =========================================================
+     NAVIGATION
+     ========================================================= */
+
+  function switchView(view) {
+    const validViews = [
+      "dashboard",
+      "calendar",
+      "today",
+      "upcoming",
+      "completed",
+      "overdue",
+      "high",
+      "categories",
+      "settings"
+    ];
+
+    if (
+      !validViews.includes(view)
+    ) {
+      view = "dashboard";
+    }
+
+    state.view = view;
+
+    $$(".nav-button").forEach(
+      (button) => {
+        button.classList.toggle(
+          "active",
+          button.dataset.view ===
+            view
+        );
+      }
+    );
+
+    $$(".view").forEach(
+      (element) => {
+        element.classList.remove(
+          "active"
+        );
+      }
     );
 
     if (view === "dashboard") {
@@ -1266,39 +1468,44 @@
           "active"
         );
 
-    } else if (view === "calendar") {
+      return;
+    }
+
+    if (view === "calendar") {
       $("#calendarView")
         ?.classList.add(
           "active"
         );
 
-    } else if (view === "settings") {
+      renderCalendar();
+
+      return;
+    }
+
+    if (view === "settings") {
       $("#settingsView")
         ?.classList.add(
           "active"
         );
 
-    } else {
-      $("#listView")
-        ?.classList.add(
-          "active"
-        );
+      updateSettingsUI();
 
-      state.listView =
-        view;
-
-      renderCurrentList();
+      return;
     }
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth"
-    });
+    state.listView = view;
+
+    $("#listView")
+      ?.classList.add(
+        "active"
+      );
+
+    renderCurrentList();
   }
 
-  /* =======================================================
+  /* =========================================================
      CLOCK
-     ======================================================= */
+     ========================================================= */
 
   function updateClock() {
     const now =
@@ -1309,17 +1516,18 @@
         [],
         {
           hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit"
+          minute: "2-digit"
         }
       );
-
-    const date =
-      formatDate(now);
 
     if (els.topClock) {
       els.topClock.textContent =
         time;
+    }
+
+    if (els.topDate) {
+      els.topDate.textContent =
+        now.toLocaleDateString();
     }
 
     if (els.largeClock) {
@@ -1327,114 +1535,610 @@
         time;
     }
 
-    if (els.topDate) {
-      els.topDate.textContent =
-        date;
-    }
-
     if (els.largeDate) {
       els.largeDate.textContent =
-        date;
+        formatDate(now);
+    }
+
+    /* Update countdown */
+
+    if (
+      state.view === "dashboard" &&
+      window.TaskStore &&
+      els.nextTaskContent
+    ) {
+      const next =
+        TaskStore.next();
+
+      const countdownElement =
+        els.nextTaskContent.querySelector(
+          ".countdown"
+        );
+
+      if (
+        next &&
+        countdownElement
+      ) {
+        countdownElement.textContent =
+          `STARTS IN ${countdown(
+            TaskStore.taskDateTime(
+              next
+            )
+          )}`;
+      }
     }
   }
 
-  /* =======================================================
-     EVENTS
-     ======================================================= */
+  /* =========================================================
+     BOOT SCREEN
+     ========================================================= */
 
-  function bindEvents() {
-    $$(".nav-item").forEach(
-      button => {
-        button.addEventListener(
-          "click",
-          () =>
-            switchView(
-              button.dataset.view
+  function boot() {
+    if (
+      !els.boot ||
+      !els.bootText ||
+      !els.bootProgress
+    ) {
+      return;
+    }
+
+    const lines = [
+      "BOOTING TODO MACHINE...",
+      "LOADING TASK DATABASE...",
+      "INITIALIZING CLOCK...",
+      "CHECKING NOTIFICATIONS...",
+      "SYSTEM READY."
+    ];
+
+    let index = 0;
+
+    const finish = () => {
+      els.boot?.remove();
+    };
+
+    const timer =
+      setInterval(() => {
+        els.bootText.textContent =
+          lines[
+            Math.min(
+              index,
+              lines.length - 1
             )
+          ];
+
+        els.bootProgress.style.width =
+          `${Math.min(
+            100,
+            ((index + 1) /
+              lines.length) *
+              100
+          )}%`;
+
+        index++;
+
+        if (
+          index >= lines.length
+        ) {
+          clearInterval(timer);
+
+          setTimeout(
+            finish,
+            250
+          );
+        }
+      }, 220);
+
+    if (els.skipBoot) {
+      els.skipBoot.onclick =
+        () => {
+          clearInterval(
+            timer
+          );
+
+          finish();
+        };
+    }
+  }
+
+  /* =========================================================
+     PWA INSTALL
+     ========================================================= */
+
+  function isStandalone() {
+    return (
+      window.matchMedia?.(
+        "(display-mode: standalone)"
+      ).matches ||
+      window.navigator.standalone ===
+        true
+    );
+  }
+
+  function updateAppMode() {
+    const installed =
+      isStandalone();
+
+    const mode =
+      installed
+        ? "STANDALONE MODE"
+        : "BROWSER MODE";
+
+    if (els.appModeStatus) {
+      els.appModeStatus.textContent =
+        mode;
+    }
+
+    if (els.settingsAppMode) {
+      els.settingsAppMode.textContent =
+        mode;
+    }
+
+    if (
+      installed &&
+      els.installAppBtn
+    ) {
+      els.installAppBtn.hidden =
+        true;
+    }
+  }
+
+  async function installApp() {
+    if (
+      !state.deferredInstallPrompt
+    ) {
+      toast(
+        "INSTALL",
+        isStandalone()
+          ? "TODO MACHINE IS ALREADY INSTALLED."
+          : "INSTALL PROMPT IS NOT AVAILABLE. USE YOUR BROWSER'S INSTALL OPTION."
+      );
+
+      return;
+    }
+
+    try {
+      state.deferredInstallPrompt.prompt();
+
+      const result =
+        await state.deferredInstallPrompt
+          .userChoice;
+
+      if (
+        result.outcome ===
+        "accepted"
+      ) {
+        toast(
+          "INSTALLING",
+          "TODO MACHINE IS BEING INSTALLED."
         );
+      }
+
+      state.deferredInstallPrompt =
+        null;
+
+      if (els.installAppBtn) {
+        els.installAppBtn.hidden =
+          true;
+      }
+    } catch (error) {
+      console.error(
+        "PWA INSTALL ERROR:",
+        error
+      );
+    }
+  }
+
+  /* NOTE: install buttons, beforeinstallprompt and
+     appinstalled are handled by pwa.js. Wiring them here
+     as well fired installApp() twice per click, which
+     broke the install prompt. This module only mirrors
+     the display mode into the status labels. */
+
+  function setupPWAInstall() {
+    window.addEventListener(
+      "appinstalled",
+      () => {
+        updateAppMode();
       }
     );
 
-    $$("[data-action='new-task']")
-      .forEach(
-        button =>
-          button.addEventListener(
-            "click",
-            () => openDialog()
-          )
+    updateAppMode();
+  }
+
+  /* =========================================================
+     SERVICE WORKER STATUS
+     ========================================================= */
+
+  async function updateServiceWorkerStatus() {
+    if (
+      !els.settingsSwStatus
+    ) {
+      return;
+    }
+
+    if (
+      !("serviceWorker" in navigator)
+    ) {
+      els.settingsSwStatus.textContent =
+        "NOT SUPPORTED";
+
+      return;
+    }
+
+    try {
+      const registration =
+        await navigator.serviceWorker.getRegistration();
+
+      els.settingsSwStatus.textContent =
+        registration
+          ? "ACTIVE"
+          : "NOT REGISTERED";
+    } catch {
+      els.settingsSwStatus.textContent =
+        "ERROR";
+    }
+  }
+
+  async function registerServiceWorker() {
+    if (
+      !("serviceWorker" in navigator)
+    ) {
+      updateServiceWorkerStatus();
+      return;
+    }
+
+    try {
+      await navigator.serviceWorker.register(
+        "./sw.js"
       );
 
-    $("#newTaskBtn")
-      ?.addEventListener(
-        "click",
-        () => openDialog()
+      updateServiceWorkerStatus();
+    } catch (error) {
+      console.error(
+        "SERVICE WORKER ERROR:",
+        error
       );
 
-    $("#closeDialog")
-      ?.addEventListener(
-        "click",
-        closeDialog
-      );
-
-    $("#cancelTask")
-      ?.addEventListener(
-        "click",
-        closeDialog
-      );
-
-    els.dialog?.addEventListener(
-      "cancel",
-      event => {
-        event.preventDefault();
-        closeDialog();
+      if (
+        els.settingsSwStatus
+      ) {
+        els.settingsSwStatus.textContent =
+          "ERROR";
       }
+    }
+  }
+
+  /* =========================================================
+     NOTIFICATIONS
+     ========================================================= */
+
+  function isIOSDevice() {
+    return /iphone|ipad|ipod/i.test(
+      navigator.userAgent
+    );
+  }
+
+  async function enableNotifications() {
+    try {
+      if (
+        !window.Notifications ||
+        typeof Notifications.enablePush !==
+          "function"
+      ) {
+        toast(
+          "NOTIFICATIONS",
+          "Notification system is not loaded."
+        );
+
+        return;
+      }
+
+      if (
+        typeof Notifications.isPushSupported ===
+          "function" &&
+        !Notifications.isPushSupported()
+      ) {
+        toast(
+          "NOTIFICATIONS",
+          isIOSDevice()
+            ? "THIS BROWSER CANNOT RECEIVE PUSH. ADD TODO MACHINE TO YOUR HOME SCREEN (SHARE > ADD TO HOME SCREEN), THEN ENABLE REMINDERS FROM THE INSTALLED APP."
+            : "THIS BROWSER DOES NOT SUPPORT PUSH NOTIFICATIONS."
+        );
+
+        return;
+      }
+
+      const result =
+        await Notifications.enablePush();
+
+      if (
+        result?.status ===
+        "subscribed"
+      ) {
+        toast(
+          "PUSH ENABLED",
+          "SERVER REMINDERS ARE NOW REGISTERED FOR THIS DEVICE."
+        );
+      } else {
+        toast(
+          "NOTIFICATIONS",
+          `PERMISSION: ${
+            result?.status ||
+            "UNKNOWN"
+          }`
+        );
+      }
+    } catch (error) {
+      console.error(error);
+
+      toast(
+        "PUSH SETUP ERROR",
+        error.message ||
+          "Unable to enable notifications."
+      );
+    }
+  }
+
+  /* =========================================================
+     RETRO SOUND
+     ========================================================= */
+
+  /* Sound preference is owned by notifications.js
+     (single key: todoMachineNotificationSound) so both
+     toggles always stay in sync. */
+
+  function loadSoundPreference() {
+    state.soundEnabled =
+      window.Notifications &&
+      typeof Notifications.isNotificationSoundEnabled ===
+        "function"
+        ? Notifications.isNotificationSoundEnabled()
+        : true;
+  }
+
+  function setSoundEnabled(enabled) {
+    state.soundEnabled =
+      Boolean(enabled);
+
+    if (
+      window.Notifications &&
+      typeof Notifications.setNotificationSoundEnabled ===
+        "function"
+    ) {
+      Notifications.setNotificationSoundEnabled(
+        state.soundEnabled
+      );
+    }
+  }
+
+  function playRetroBeep() {
+    if (!state.soundEnabled) {
+      return;
+    }
+
+    try {
+      const AudioContext =
+        window.AudioContext ||
+        window.webkitAudioContext;
+
+      if (!AudioContext) {
+        return;
+      }
+
+      const context =
+        new AudioContext();
+
+      const oscillator =
+        context.createOscillator();
+
+      const gain =
+        context.createGain();
+
+      oscillator.type =
+        "square";
+
+      oscillator.frequency.value =
+        880;
+
+      gain.gain.setValueAtTime(
+        0.08,
+        context.currentTime
+      );
+
+      gain.gain.exponentialRampToValueAtTime(
+        0.001,
+        context.currentTime +
+          0.18
+      );
+
+      oscillator.connect(
+        gain
+      );
+
+      gain.connect(
+        context.destination
+      );
+
+      oscillator.start();
+
+      oscillator.stop(
+        context.currentTime +
+          0.18
+      );
+
+      oscillator.onended =
+        () => {
+          context.close();
+        };
+    } catch (error) {
+      console.warn(
+        "Sound unavailable:",
+        error
+      );
+    }
+  }
+
+  function openSoundDialog() {
+    if (
+      !els.soundDialog
+    ) {
+      return;
+    }
+
+    if (
+      typeof els.soundDialog.showModal ===
+      "function"
+    ) {
+      els.soundDialog.showModal();
+    } else {
+      els.soundDialog.setAttribute(
+        "open",
+        ""
+      );
+    }
+  }
+
+  function closeSoundDialog() {
+    if (
+      !els.soundDialog
+    ) {
+      return;
+    }
+
+    if (
+      typeof els.soundDialog.close ===
+      "function"
+    ) {
+      els.soundDialog.close();
+    } else {
+      els.soundDialog.removeAttribute(
+        "open"
+      );
+    }
+  }
+
+  /* =========================================================
+     SETTINGS
+     ========================================================= */
+
+  async function updateSettingsUI() {
+    updateAppMode();
+    updateServiceWorkerStatus();
+
+    /* Ask the notification module for the real push state
+       so the label always matches the sidebar button. */
+
+    if (
+      els.settingsNotifyBtn &&
+      window.Notifications &&
+      typeof Notifications.getPushStatus ===
+        "function"
+    ) {
+      try {
+        const status =
+          await Notifications.getPushStatus();
+
+        if (status.supported) {
+          els.settingsNotifyBtn.textContent =
+            status.subscribed
+              ? "ENABLED"
+              : status.permission === "denied"
+                ? "BLOCKED"
+                : "ENABLE";
+        } else {
+          els.settingsNotifyBtn.textContent =
+            "NOT SUPPORTED";
+        }
+      } catch {
+        /* registration not ready yet */
+      }
+    }
+  }
+
+  /* =========================================================
+     EVENT BINDING
+     ========================================================= */
+
+  function setupNavigation() {
+    $$(".nav-button").forEach(
+      (button) => {
+        button.addEventListener(
+          "click",
+          () => {
+            switchView(
+              button.dataset.view
+            );
+          }
+        );
+      }
+    );
+  }
+
+  function setupTaskButtons() {
+    els.newTaskButton?.addEventListener(
+      "click",
+      () => openDialog()
+    );
+
+    els.newTaskButtonSide?.addEventListener(
+      "click",
+      () => openDialog()
+    );
+
+    els.newTaskButtonList?.addEventListener(
+      "click",
+      () => openDialog()
+    );
+  }
+
+  function setupTaskDialog() {
+    els.closeDialog?.addEventListener(
+      "click",
+      closeDialog
+    );
+
+    els.cancelDialog?.addEventListener(
+      "click",
+      closeDialog
     );
 
     els.form?.addEventListener(
       "submit",
-      async event => {
-        event.preventDefault();
+      handleSubmit
+    );
 
-        try {
-          const payload =
-            getFormPayload();
+    /* Close when clicking dialog backdrop */
 
-          await saveTask(
-            payload,
-            state.editingId
-          );
-
-        } catch (error) {
-          if (els.formError) {
-            els.formError.textContent =
-              error.message;
-          }
+    els.dialog?.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target ===
+          els.dialog
+        ) {
+          closeDialog();
         }
       }
     );
+  }
 
-    bindTaskList(
-      els.taskList
-    );
-
-    bindTaskList(
-      els.listTaskList
-    );
-
+  function setupSearchAndFilters() {
     els.taskSearch?.addEventListener(
       "input",
-      () =>
+      () => {
         renderDashboard(
           TaskStore.all()
-        )
+        );
+      }
     );
 
     els.quickFilter?.addEventListener(
       "change",
-      () =>
+      () => {
         renderDashboard(
           TaskStore.all()
-        )
+        );
+      }
     );
 
     els.listSearch?.addEventListener(
@@ -1446,135 +2150,323 @@
       "change",
       renderCurrentList
     );
+  }
 
-    $("#calendarPrev")
-      ?.addEventListener(
-        "click",
-        () => {
-          state.calendarDate.setMonth(
-            state.calendarDate.getMonth() -
-              1
+  function setupCalendar() {
+    els.prevMonth?.addEventListener(
+      "click",
+      () => {
+        state.calendarDate.setMonth(
+          state.calendarDate.getMonth() -
+            1
+        );
+
+        renderCalendar();
+      }
+    );
+
+    els.nextMonth?.addEventListener(
+      "click",
+      () => {
+        state.calendarDate.setMonth(
+          state.calendarDate.getMonth() +
+            1
+        );
+
+        renderCalendar();
+      }
+    );
+  }
+
+  function setupNotifications() {
+    els.notifyButton?.addEventListener(
+      "click",
+      enableNotifications
+    );
+
+    els.settingsNotifyBtn?.addEventListener(
+      "click",
+      enableNotifications
+    );
+  }
+
+  /* NOTE: sound toggles and test-sound buttons are wired
+     once inside notifications.js (their DOMContentLoaded
+     handler). Wiring them here too would fire every change
+     twice and desync the two preference keys. */
+
+  function setupSoundSettings() {
+    els.closeSoundDialog?.addEventListener(
+      "click",
+      closeSoundDialog
+    );
+
+    els.closeSoundSettings?.addEventListener(
+      "click",
+      closeSoundDialog
+    );
+
+    els.soundDialog?.addEventListener(
+      "click",
+      (event) => {
+        if (
+          event.target ===
+          els.soundDialog
+        ) {
+          closeSoundDialog();
+        }
+      }
+    );
+  }
+
+  /* =========================================================
+     DATABASE EVENTS
+     ========================================================= */
+
+  function setupDatabaseEvents() {
+    window.addEventListener(
+      "db:status",
+      (event) => {
+        if (
+          event.detail &&
+          typeof event.detail.connected !==
+            "undefined"
+        ) {
+          setConnection(
+            event.detail.connected
           );
-
-          renderCalendar();
         }
-      );
+      }
+    );
 
-    $("#calendarNext")
-      ?.addEventListener(
-        "click",
-        () => {
-          state.calendarDate.setMonth(
-            state.calendarDate.getMonth() +
-              1
+    window.addEventListener(
+      "todo:toast",
+      (event) => {
+        toast(
+          event.detail?.title ||
+            "TODO MACHINE",
+          event.detail?.body ||
+            ""
+        );
+      }
+    );
+
+    window.addEventListener(
+      "task:open",
+      (event) => {
+        const id =
+          event.detail?.id;
+
+        if (
+          id &&
+          window.TaskStore
+        ) {
+          openDialog(
+            TaskStore.byId(id)
           );
-
-          renderCalendar();
         }
-      );
-
-    $("#calendarToday")
-      ?.addEventListener(
-        "click",
-        () => {
-          state.calendarDate =
-            new Date();
-
-          renderCalendar();
-        }
-      );
-
-    $("#refreshBtn")
-      ?.addEventListener(
-        "click",
-        refresh
-      );
+      }
+    );
 
     window.addEventListener(
       "online",
-      refresh
+      () => {
+        refresh();
+      }
     );
 
     window.addEventListener(
       "offline",
-      () => setConnection(false)
+      () => {
+        setConnection(false);
+
+        toast(
+          "OFFLINE MODE",
+          "CHANGES WILL SYNC WHEN CONNECTION RETURNS."
+        );
+      }
+    );
+
+    window.addEventListener(
+      "todo:sound-changed",
+      (event) => {
+        /* Keep app state in sync when the toggles wired
+           inside notifications.js change the setting. */
+
+        if (
+          typeof event.detail?.enabled ===
+          "boolean"
+        ) {
+          state.soundEnabled =
+            event.detail.enabled;
+        }
+      }
+    );
+
+    window.addEventListener(
+      "storage",
+      (event) => {
+        if (
+          event.key ===
+          "todoMachineNotificationSound"
+        ) {
+          loadSoundPreference();
+        }
+      }
     );
   }
 
-  /* =======================================================
-     BOOT
-     ======================================================= */
+  /* =========================================================
+     TASK STORE
+     ========================================================= */
 
-  async function boot() {
-    try {
-      if (els.bootText) {
-        els.bootText.textContent =
-          "INITIALIZING TODO MACHINE...";
-      }
-
-      if (els.bootProgress) {
-        els.bootProgress.style.width =
-          "25%";
-      }
-
-      bindEvents();
-
-      if (els.bootProgress) {
-        els.bootProgress.style.width =
-          "50%";
-      }
-
-      updateClock();
-
-      setInterval(
-        updateClock,
-        1000
+  function setupTaskStore() {
+    if (
+      !window.TaskStore ||
+      typeof TaskStore.subscribe !==
+        "function"
+    ) {
+      console.warn(
+        "TaskStore is not available."
       );
 
-      if (els.bootProgress) {
-        els.bootProgress.style.width =
-          "75%";
-      }
+      return;
+    }
 
-      await refresh();
+    TaskStore.subscribe(
+      renderAll
+    );
+  }
 
-      if (window.Notifications) {
-        Notifications.start(
-          () => TaskStore.all()
+  /* =========================================================
+     REALTIME
+     ========================================================= */
+
+  function setupRealtime() {
+    if (
+      window.TodoDB &&
+      typeof TodoDB.connectRealtime ===
+        "function"
+    ) {
+      try {
+        TodoDB.connectRealtime(
+          () => {
+            refresh();
+          }
+        );
+      } catch (error) {
+        console.warn(
+          "Realtime connection failed:",
+          error
         );
       }
-
-      if (els.bootProgress) {
-        els.bootProgress.style.width =
-          "100%";
-      }
-
-      setTimeout(
-        () => {
-          els.boot?.classList.add(
-            "hidden"
-          );
-        },
-        500
-      );
-
-    } catch (error) {
-      console.error(
-        "[APP] Boot failed:",
-        error
-      );
-
-      els.boot?.classList.add(
-        "hidden"
-      );
-
-      toast(
-        "BOOT ERROR",
-        error.message ||
-          "Application failed to initialize."
-      );
     }
   }
+
+  /* =========================================================
+     NOTIFICATION WATCHER
+     ========================================================= */
+
+  function setupNotificationWatcher() {
+    if (
+      window.Notifications &&
+      typeof Notifications.start ===
+        "function"
+    ) {
+      try {
+        Notifications.start(
+          () =>
+            window.TaskStore
+              ? TaskStore.all()
+              : []
+        );
+      } catch (error) {
+        console.warn(
+          "Notification watcher failed:",
+          error
+        );
+      }
+    }
+  }
+
+  /* =========================================================
+     MAIN SETUP
+     ========================================================= */
+
+  async function setup() {
+    /* Boot */
+
+    boot();
+
+    /* Clock */
+
+    updateClock();
+
+    setInterval(
+      updateClock,
+      1000
+    );
+
+    /* Preferences */
+
+    loadSoundPreference();
+
+    /* UI */
+
+    setupNavigation();
+    setupTaskButtons();
+    setupTaskDialog();
+    setupSearchAndFilters();
+    setupCalendar();
+    setupNotifications();
+    setupSoundSettings();
+
+    /* Task lists */
+
+    bindTaskList(
+      els.taskList
+    );
+
+    bindTaskList(
+      els.listTaskList
+    );
+
+    /* Events */
+
+    setupDatabaseEvents();
+
+    /* PWA */
+
+    setupPWAInstall();
+
+    /* Service worker */
+
+    registerServiceWorker();
+
+    /* TaskStore */
+
+    setupTaskStore();
+
+    /* Realtime */
+
+    setupRealtime();
+
+    /* Notification watcher */
+
+    setupNotificationWatcher();
+
+    /* Initial UI */
+
+    updateSettingsUI();
+
+    /* Database */
+
+    await refresh();
+  }
+
+  /* =========================================================
+     START
+     ========================================================= */
 
   if (
     document.readyState ===
@@ -1582,22 +2474,13 @@
   ) {
     document.addEventListener(
       "DOMContentLoaded",
-      boot,
-      { once: true }
+      setup,
+      {
+        once: true
+      }
     );
   } else {
-    boot();
+    setup();
   }
-
-  /* =======================================================
-     PUBLIC APP API
-     ======================================================= */
-
-  window.TodoMachine = {
-    refresh,
-    openDialog,
-    closeDialog,
-    switchView,
-    renderAll
-  };
 })();
+
