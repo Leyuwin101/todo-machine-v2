@@ -1,0 +1,11 @@
+{
+  "name": "todo-machine-push-tools",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate:vapid": "node scripts/generate-vapid-keys.mjs"
+  },
+  "dependencies": {
+    "@mmmike/web-push": "^1.0.1"
+  }
+}

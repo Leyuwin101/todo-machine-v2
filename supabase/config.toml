@@ -1,0 +1,2 @@
+[functions.send-task-reminders]
+verify_jwt = false
