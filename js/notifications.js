@@ -18,6 +18,33 @@ const NOTIFICATION_VOLUME_KEY =
 const PUSH_DEVICE_KEY =
   "todoMachinePushDeviceId";
 
+/* Remembers that the user intentionally enabled push,
+   so the enabled state survives reloads and closed tabs. */
+
+const PUSH_ENABLED_KEY =
+  "todoMachinePushEnabled";
+
+function isPushEnabledPreference() {
+  return (
+    localStorage.getItem(
+      PUSH_ENABLED_KEY
+    ) === "true"
+  );
+}
+
+function setPushEnabledPreference(
+  enabled
+) {
+  try {
+    localStorage.setItem(
+      PUSH_ENABLED_KEY,
+      enabled ? "true" : "false"
+    );
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 /* =========================================================
    AUDIO
    ========================================================= */
@@ -531,6 +558,8 @@ async function enablePush() {
       "UTC"
   );
 
+  setPushEnabledPreference(true);
+
   updatePushButtons(
     "enabled"
   );
@@ -598,6 +627,8 @@ async function disablePush() {
   }
 
   await subscription.unsubscribe();
+
+  setPushEnabledPreference(false);
 
   updatePushButtons(
     "disabled"
@@ -925,36 +956,88 @@ document.addEventListener(
       isPushSupported()
     ) {
       try {
-        const status =
-          await getPushStatus();
-
-        updatePushButtons(
-          status.subscribed
-            ? "enabled"
-            : status.permission ===
-                "denied"
-              ? "blocked"
-              : "disabled"
-        );
-
-        window.dispatchEvent(
-          new CustomEvent(
-            "push:status",
-            {
-              detail: status
-            }
-          )
-        );
-
+        await syncPushState();
       } catch (error) {
         console.warn(
           "[PUSH] Status check failed:",
           error
         );
       }
+
+      /* Re-verify every time the app becomes visible
+         again (tab switch, phone unlock, app resume) so
+         an enabled reminder setting never silently dies. */
+
+      document.addEventListener(
+        "visibilitychange",
+        () => {
+          if (
+            document.visibilityState ===
+            "visible"
+          ) {
+            syncPushState().catch(
+              error =>
+                console.warn(
+                  "[PUSH] Re-sync failed:",
+                  error
+                )
+            );
+          }
+        }
+      );
     }
   }
 );
+
+/* =========================================================
+   PUSH STATE SYNC
+   ========================================================= */
+
+async function syncPushState() {
+  let status =
+    await getPushStatus();
+
+  /* The user enabled reminders at some point — keep them
+     enabled. If permission is granted but the subscription
+     was lost (browser cleared it, OS reset, etc.),
+     silently re-subscribe without any user action. */
+
+  if (
+    status.permission === "granted" &&
+    (!status.subscribed ||
+      isPushEnabledPreference())
+  ) {
+    try {
+      await enablePush();
+
+      status =
+        await getPushStatus();
+    } catch (error) {
+      console.warn(
+        "[PUSH] Silent re-subscribe failed:",
+        error
+      );
+    }
+  }
+
+  updatePushButtons(
+    status.subscribed
+      ? "enabled"
+      : status.permission ===
+          "denied"
+        ? "blocked"
+        : "disabled"
+  );
+
+  window.dispatchEvent(
+    new CustomEvent(
+      "push:status",
+      {
+        detail: status
+      }
+    )
+  );
+}
 
 /* =========================================================
    PUBLIC API

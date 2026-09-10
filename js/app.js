@@ -2570,6 +2570,7 @@
     /* UI */
 
     setupNavigation();
+    applyLaunchParams();
     setupTaskButtons();
     setupTaskDialog();
     setupSearchAndFilters();
@@ -2622,6 +2623,62 @@
     /* Database */
 
     await refresh();
+  }
+
+  /* =========================================================
+     DEEP LINKS (app shortcuts + notification clicks)
+     ========================================================= */
+
+  function applyLaunchParams() {
+    try {
+      const params = new URLSearchParams(
+        window.location.search
+      );
+      const view = params.get("view");
+
+      if (view) {
+        state.view = view;
+        if (view !== "calendar") {
+          state.listView = "today";
+        }
+      }
+
+      if (params.get("new") === "1") {
+        setTimeout(() => {
+          const btn = $("#newTaskBtn");
+          if (btn) btn.click();
+        }, 1200);
+      }
+
+      if (view || params.get("new")) {
+        window.history.replaceState(
+          {},
+          "",
+          window.location.pathname
+        );
+      }
+    } catch {
+      /* ignore malformed params */
+    }
+  }
+
+  /* Message from the service worker when the user
+     taps a notification while the app is open. */
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener(
+      "message",
+      (event) => {
+        if (
+          event.data &&
+          event.data.type === "TODO_NAVIGATE" &&
+          event.data.view
+        ) {
+          state.view = event.data.view;
+          render();
+        }
+      }
+    );
   }
 
   /* =========================================================

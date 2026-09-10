@@ -6,6 +6,44 @@
   "display": "standalone",
   "background_color": "#c0c0c0",
   "theme_color": "#000080",
+  "shortcuts": [
+    {
+      "name": "TODAY'S TASKS",
+      "short_name": "TODAY",
+      "description": "Show today's task list.",
+      "url": "./?view=today",
+      "icons": [
+        {
+          "src": "./assets/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "CALENDAR",
+      "short_name": "CALENDAR",
+      "description": "Open the calendar view.",
+      "url": "./?view=calendar",
+      "icons": [
+        {
+          "src": "./assets/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "NEW TASK",
+      "short_name": "NEW TASK",
+      "description": "Create a new task.",
+      "url": "./?view=today&new=1",
+      "icons": [
+        {
+          "src": "./assets/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
     "icons": [
     {
       "src": "./assets/icon-192.png",

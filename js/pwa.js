@@ -266,6 +266,34 @@
      SERVICE WORKER
      ======================================================= */
 
+  /* When a new service worker takes over (cache version
+     bump), the page may still be running stale assets.
+     Reload once so the app always runs the latest code. */
+
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      () => {
+        try {
+          if (
+            !sessionStorage.getItem(
+              "todoMachine.swReloaded"
+            )
+          ) {
+            sessionStorage.setItem(
+              "todoMachine.swReloaded",
+              "1"
+            );
+
+            window.location.reload();
+          }
+        } catch {
+          /* storage blocked — skip auto reload */
+        }
+      }
+    );
+  }
+
   async function registerServiceWorker() {
     if (
       !("serviceWorker" in

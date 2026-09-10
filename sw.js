@@ -10,7 +10,7 @@
    ========================================================= */
 
 const CACHE_NAME =
-  "todo-machine-v6";
+  "todo-machine-v7";
 
 const APP_SHELL = [
   "./",
@@ -98,6 +98,22 @@ self.addEventListener(
         })
         .then(() => {
           return self.clients.claim();
+        })
+        .then(() => {
+          /* Tell every open window a new version took over so
+             stale cached UI (e.g. a frozen clock) reloads. */
+
+          return self.clients.matchAll({
+            type: "window",
+            includeUncontrolled: true
+          });
+        })
+        .then(clients => {
+          for (const client of clients) {
+            client.postMessage({
+              type: "TODO_SW_UPDATED"
+            });
+          }
         })
     );
   }
